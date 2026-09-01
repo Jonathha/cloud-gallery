@@ -1,5 +1,5 @@
 import { Lock, Film, Image as ImageIcon, Play, Check, Trash2, Shield } from "lucide-react";
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { DecryptedImage } from "../types";
 import { useGalleryItemObserver } from "../hooks/gallery/item/useGalleryItemObserver";
@@ -29,8 +29,9 @@ export default function GalleryItem({
   handleImageClick, fetchFullMedia, setImageToDelete, setImageToProtect,
 }: GalleryItemProps) {
   const isSelected = selectedForDeletion.includes(img.id);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
-  const { itemRef, displayUrl, aspectRatio, handleImageLoad, handleImageError } = useGalleryItemObserver({
+  const { itemRef, displayUrl, isVisible, aspectRatio, handleImageLoad, handleImageError } = useGalleryItemObserver({
     img, fetchFullMedia
   });
 
@@ -38,6 +39,18 @@ export default function GalleryItem({
     imgId: img.id, isSelectionMode, setIsSelectionMode, setSelectedForDeletion,
     onImageClick: (e) => handleImageClick(img, index, e)
   });
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !img.isVideo) return;
+
+    if (isVisible && displayUrl.startsWith("blob:")) {
+      video.play().catch(() => {});
+    } else {
+      video.pause();
+      if (!isVisible) video.currentTime = 0;
+    }
+  }, [isVisible, displayUrl, img.isVideo]);
 
   return (
     <motion.div
@@ -83,6 +96,24 @@ export default function GalleryItem({
               {img.isVideo ? <Film size={26} className="opacity-40 mb-1" /> : <ImageIcon size={26} className="opacity-40 mb-1" />}
               <span className="text-[9px] font-mono tracking-wider opacity-60 uppercase">{img.isVideo ? "Vídeo" : "Imagem"}</span>
             </div>
+          ) : img.isVideo ? (
+            <video
+              ref={videoRef}
+              src={displayUrl}
+              muted
+              playsInline
+              preload="none"
+              className="w-full h-full object-cover transition-all duration-500 group-hover:brightness-95 select-none"
+              style={{ display: "block" }}
+              onError={handleImageError}
+              onLoadedMetadata={(e) => {
+                const { videoWidth, videoHeight } = e.currentTarget;
+                if (videoWidth && videoHeight) setAspectRatio?.(videoWidth / videoHeight);
+              }}
+              controls={false}
+              onContextMenu={(e) => e.preventDefault()}
+              draggable={false}
+            />
           ) : (
             <img
               src={displayUrl} alt="" loading="lazy" decoding="async"
@@ -92,7 +123,7 @@ export default function GalleryItem({
             />
           )}
           {img.isVideo && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/20 transition-colors">
+            <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/20 transition-colors pointer-events-none">
               <div className="p-2 bg-black/50 backdrop-blur-md text-white rounded-full transition-transform duration-200 group-hover:scale-110 shadow-sm">
                 <Play size={12} fill="currentColor" className="w-3 h-3 sm:w-3.5 sm:h-3.5 ml-0.5" />
               </div>
