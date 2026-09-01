@@ -31,7 +31,7 @@ export default function GalleryItem({
   const isSelected = selectedForDeletion.includes(img.id);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const { itemRef, displayUrl, isVisible, aspectRatio, handleImageLoad, handleImageError } = useGalleryItemObserver({
+  const { itemRef, displayUrl, isVisible, aspectRatio, handleMediaLoad, handleImageError } = useGalleryItemObserver({
     img, fetchFullMedia
   });
 
@@ -106,20 +106,16 @@ export default function GalleryItem({
               className="w-full h-full object-cover transition-all duration-500 group-hover:brightness-95 select-none"
               style={{ display: "block" }}
               onError={handleImageError}
-              onLoadedMetadata={(e) => {
-                const { videoWidth, videoHeight } = e.currentTarget;
-                if (videoWidth && videoHeight) setAspectRatio?.(videoWidth / videoHeight);
-              }}
+              onLoadedMetadata={handleMediaLoad}
               controls={false}
               onContextMenu={(e) => e.preventDefault()}
-              draggable={false}
             />
           ) : (
             <img
               src={displayUrl} alt="" loading="lazy" decoding="async"
               className="w-full h-full object-cover transition-all duration-500 group-hover:brightness-95 select-none"
               style={{ display: "block" }} referrerPolicy="no-referrer" draggable={false}
-              onContextMenu={(e) => e.preventDefault()} onLoad={handleImageLoad} onError={handleImageError}
+              onContextMenu={(e) => e.preventDefault()} onLoad={handleMediaLoad} onError={handleImageError}
             />
           )}
           {img.isVideo && (
