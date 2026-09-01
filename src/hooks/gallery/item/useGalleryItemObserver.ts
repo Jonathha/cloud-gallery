@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import { DecryptedImage } from "../../../types";
-import { getImageObjectURL, getVideoObjectURL } from "../../../utils/fileCrypto";
+import { getImageObjectURL, getVideoObjectURL, revokeImageObjectURL, revokeVideoObjectURL } from "../../../utils/fileCrypto";
 
 interface UseGalleryItemObserverProps {
   img: DecryptedImage;
@@ -9,12 +9,13 @@ interface UseGalleryItemObserverProps {
 
 export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemObserverProps) {
   const itemRef = useRef<HTMLDivElement>(null);
+  const isVisibleRef = useRef(false);
   const [displayUrl, setDisplayUrl] = useState<string>(img.url);
   const [aspectRatio, setAspectRatio] = useState<number>(1);
 
   useEffect(() => {
     setDisplayUrl((prev) => {
-      const original = img.isVideo ? null : getImageObjectURL(img.id);
+      const original = img.isVideo ? getVideoObjectURL(img.id) : getImageObjectURL(img.id);
       return original || img.originalUrl || img.url || prev;
     });
   }, [img.url, img.originalUrl, img.id, img.isVideo]);
@@ -23,18 +24,36 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
     let isMounted = true;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !img.isVideo) {
-          fetchFullMedia(img, true)
-            .then(() => {
-              if (isMounted) {
-                const original = getImageObjectURL(img.id);
-                if (original) {
-                  setDisplayUrl(original);
-                }
-              }
-            })
-            .catch(() => {});
+        const isVisible = entries[0].isIntersecting;
+        isVisibleRef.current = isVisible;
+
+        if (!isVisible) {
+          setDisplayUrl(img.url);
+          if (img.isVideo) {
+            revokeVideoObjectURL(img.id);
+          } else {
+            revokeImageObjectURL(img.id);
+          }
+          return;
         }
+
+        fetchFullMedia(img, true)
+          .then(() => {
+            if (!isMounted || !isVisibleRef.current) {
+              if (img.isVideo) {
+                revokeVideoObjectURL(img.id);
+              } else {
+                revokeImageObjectURL(img.id);
+              }
+              return;
+            }
+
+            const original = img.isVideo ? getVideoObjectURL(img.id) : getImageObjectURL(img.id);
+            if (original) {
+              setDisplayUrl(original);
+            }
+          })
+          .catch(() => {});
       },
       { rootMargin: "300px" }
     );
@@ -46,6 +65,12 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
     return () => {
       isMounted = false;
       observer.disconnect();
+      isVisibleRef.current = false;
+      if (img.isVideo) {
+        revokeVideoObjectURL(img.id);
+      } else {
+        revokeImageObjectURL(img.id);
+      }
     };
   }, [img, fetchFullMedia]);
 
@@ -58,7 +83,7 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
 
   const handleImageError = () => {
     if (displayUrl !== img.url) {
-      setDisplayUrl(img.url); // Fallback to thumbnail if LRU kicked it out
+      setDisplayUrl(img.url);
     }
   };
 
