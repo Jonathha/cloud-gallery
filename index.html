@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pt-BR" translate="no">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Cloud Gallery" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="google" content="notranslate" />
+    <meta name="zero-threat-verification" content="MTAwOTE=TVRBd09URT0=TVRBd09URT">
+    <title>Cloud Gallery</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Força a limpeza do cache e desregistra o Service Worker dentro de WebViews para garantir atualizações em tempo real
+      (function() {
+        var ua = navigator.userAgent || '';
+        var isAndroidWebView = /wv/.test(ua) || (/Android/.test(ua) && /Version\//.test(ua)) || /wv/i.test(ua) || /WebView/i.test(ua);
+        var isIosWebView = /(iPhone|iPod|iPad).*AppleWebKit(?!.*Safari)/i.test(ua);
+        var searchParams = new URLSearchParams(window.location.search);
+        var isAppUrlParam = searchParams.has('app') || searchParams.has('webview') || searchParams.has('native');
+        var isWebView = !!(
+          window.ReactNativeWebView ||
+          window.GuarlyApp ||
+          window.GuarlyNativeBridge ||
+          (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.guarlyApp) ||
+          window.AndroidBridge ||
+          window.Android ||
+          window.appVersion ||
+          window.appBuildNumber ||
+          isAndroidWebView ||
+          isIosWebView ||
+          isAppUrlParam
+        );
+
+        var hostname = window.location.hostname;
+        var isAIStudio = hostname === 'localhost' || 
+                         hostname === '127.0.0.1' || 
+                         hostname.includes('ais-dev-') || 
+                         hostname.includes('ais-pre-') || 
+                         hostname.includes('aistudio');
+
+        if (isAIStudio) {
+          // Desregistra o Service Worker para evitar carregar index.html cacheado do PWA
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+              for (var i = 0; i < registrations.length; i++) {
+                registrations[i].unregister().then(function() {
+                  console.log('Service Worker removido com sucesso no AI Studio.');
+                });
+              }
+            });
+          }
+
+          // Limpa todo o Cache Storage da API de Caches para forçar download do servidor
+          if ('caches' in window) {
+            caches.keys().then(function(names) {
+              for (var i = 0; i < names.length; i++) {
+                caches.delete(names[i]);
+              }
+            });
+          }
+        } else if (isWebView && navigator.onLine) {
+          // Limpa cache uma única vez para esta versão específica da build
+          var cacheBustKey = 'webview_cache_bust_v2.0.2';
+          if (!localStorage.getItem(cacheBustKey)) {
+            localStorage.setItem(cacheBustKey, 'true');
+            console.log('Forçando recarregamento único para limpar caches e puxar arquivos novos da Cloudflare...');
+            setTimeout(function() {
+              window.location.reload();
+            }, 150);
+          }
+        }
+      })();
+
+      // Proteção permanente contra falha de carregamento de chunk (auto-recarrega)
+      window.addEventListener('error', function(e) {
+        var errorMsg = (e && e.message) ? e.message : '';
+        var isChunkError = errorMsg.indexOf('ChunkLoadError') > -1 || 
+                           errorMsg.indexOf('Loading chunk') > -1 ||
+                           errorMsg.indexOf('Failed to fetch dynamically imported module') > -1;
+        if (isChunkError) {
+          console.warn('Falha de ativos detectada! Recarregando página para buscar versão mais recente...');
+          window.location.reload();
+        }
+      }, true);
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

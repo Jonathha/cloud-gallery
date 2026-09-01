@@ -1,0 +1,26 @@
+name = "secure-vault-backend"
+main = "server/cloudflareWorker.js"
+compatibility_date = "2024-04-03"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "cloudgallery"
+
+[[r2_buckets]]
+binding = "CHAT_R2"
+bucket_name = "cloud-gallery-chat"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "guarly"
+database_id = "6ee35aec-ac66-4fcb-ac12-4de74213d21c"
+
+[durable_objects]
+bindings = [
+  { name = "RATE_LIMITER", class_name = "RateLimiter" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RateLimiter"]
+

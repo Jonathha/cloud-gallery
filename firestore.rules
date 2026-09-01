@@ -1,0 +1,199 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Regra padrão de segurança máxima (Zero-Trust): nega leitura ou escrita global por padrão.
+    // Todas as coleções devem ser explicitamente permitidas abaixo.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Funções Auxiliares de Segurança
+    // =========================================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isNotLocked() {
+      return !(
+        resource != null && 
+        resource.data != null && 
+        'lockedUntil' in resource.data && 
+        resource.data.lockedUntil != null && 
+        request.time.toMillis() < resource.data.lockedUntil
+      );
+    }
+
+    // =========================================================================
+    // 1. Coleção de Usuários (Controle de PIN, Salt, Bloqueio e Senha Mestra)
+    // =========================================================================
+    match /users/{userId} {
+      allow read, delete: if isOwner(userId);
+      
+      // Criação: Validação estrita de tipos e presença do Modo de Criptografia e Senha Extra
+      allow create: if isOwner(userId) &&
+        (!('encryptionMode' in request.resource.data) || (
+          request.resource.data.encryptionMode is string &&
+          (request.resource.data.encryptionMode == 'standard' || request.resource.data.encryptionMode == 'custom_extra')
+        )) &&
+        (!('extraPassword' in request.resource.data) || request.resource.data.extraPassword == null || (
+          request.resource.data.extraPassword is map &&
+          request.resource.data.extraPassword.ciphertext is string &&
+          request.resource.data.extraPassword.iv is string
+        )) &&
+        (!('failedAttempts' in request.resource.data) || (request.resource.data.failedAttempts is int && request.resource.data.failedAttempts == 0)) &&
+        (!('lockedUntil' in request.resource.data) || request.resource.data.lockedUntil == null);
+        
+      allow update: if isOwner(userId) && (
+        // Proteção Brute-Force: Se bloqueado, trava chaves afetadas e assegura acréscimo numérico
+        (!isNotLocked() && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['failedAttempts', 'lockedUntil']) &&
+         'failedAttempts' in request.resource.data && 
+         request.resource.data.failedAttempts is int &&
+         (!('failedAttempts' in resource.data) || request.resource.data.failedAttempts > resource.data.failedAttempts)) ||
+         
+        // Se desbloqueado, garante imutabilidade do ID do proprietário e valida estrutura de dados do usuário
+        (isNotLocked() && 
+         (!('userId' in request.resource.data) || request.resource.data.userId == userId) &&
+         (!('encryptionMode' in request.resource.data) || (
+           request.resource.data.encryptionMode is string &&
+           (request.resource.data.encryptionMode == 'standard' || request.resource.data.encryptionMode == 'custom_extra')
+         )) &&
+         (!('extraPassword' in request.resource.data) || request.resource.data.extraPassword == null || (
+           request.resource.data.extraPassword is map &&
+           request.resource.data.extraPassword.ciphertext is string &&
+           request.resource.data.extraPassword.iv is string
+         )))
+      );
+    }
+
+    // =========================================================================
+    // 2. Configurações Gerais
+    // =========================================================================
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if isAuthenticated() && 'email' in request.auth.token && request.auth.token.email == 'jogonesteterp@gmail.com';
+    }
+
+    // =========================================================================
+    // 3. Coleção de Imagens e Mídias (Cofre Criptografado)
+    // =========================================================================
+    match /images/{imageId} {
+      allow read: if isAuthenticated() &&
+                    resource != null &&
+                    resource.data.userId == request.auth.uid;
+      
+      // Permite a exclusão direta se o usuário for o proprietário da imagem.
+      allow delete: if isAuthenticated() &&
+                      resource != null &&
+                      resource.data.userId == request.auth.uid;
+      
+      // Impede a edição direta pelo cliente. O servidor fará a validação se for preciso atualizar.
+      allow update: if false;
+      
+      // Permite criar apenas se o userId bater e não houver NENHUM campo null nos dados.
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       !request.resource.data.values().hasAny([null]);
+    }
+
+    // =========================================================================
+    // 4. Chaves Auxiliares
+    // =========================================================================
+    match /media_keys/{imageId} {
+      allow read: if isAuthenticated() &&
+                    (resource == null || !('userId' in resource.data) || resource.data.userId == request.auth.uid);
+      allow delete: if isAuthenticated() &&
+                      (resource == null || !('userId' in resource.data) || resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() &&
+                       (!('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid);
+      // Imutabilidade forçada do campo userId se presente
+      allow update: if isAuthenticated() &&
+                       (resource == null || !('userId' in resource.data) || resource.data.userId == request.auth.uid) &&
+                       (!('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid);
+    }
+
+    // =========================================================================
+    // 5. Compartilhamento Secure
+    // =========================================================================
+    match /active_shares/{claimId} {
+      allow read: if isAuthenticated() && (
+        resource == null || resource.data.userId == request.auth.uid
+      );
+      allow create, update: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && (
+        resource == null || resource.data.userId == request.auth.uid
+      );
+    }
+
+    match /shares/{shareId} {
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid;
+                             
+      allow delete: if isAuthenticated() &&
+                      (resource == null || resource.data.userId == request.auth.uid);
+                             
+      allow list: if isAuthenticated() &&
+                     resource != null &&
+                     resource.data.userId == request.auth.uid;
+                      
+      allow get: if true;
+      
+      // Defesa em Links de Visualização Única: Obriga uso do Timestamp do servidor e trava inserção de campos ocultos
+      allow update: if (
+        isAuthenticated() && 
+        resource != null && 
+        resource.data.userId == request.auth.uid && 
+        request.resource.data.userId == request.auth.uid
+      ) || (
+        resource != null &&
+        resource.data != null &&
+        (!('firstViewedAt' in resource.data) || resource.data.firstViewedAt == null) &&
+        'firstViewedAt' in request.resource.data && 
+        (request.resource.data.firstViewedAt is int || request.resource.data.firstViewedAt == request.time) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['firstViewedAt', 'firstViewerIp']) &&
+        (!('firstViewerIp' in request.resource.data) || request.resource.data.firstViewerIp is string)
+      );
+    }
+
+    // =========================================================================
+    // 6. Mensagens de Suporte
+    // =========================================================================
+    match /support_messages/{messageId} {
+      allow read, list: if isAuthenticated() && resource.data.primaryUserId == request.auth.uid;
+      
+      // Impede falsidade ideológica vinculando forçadamente ao auth.uid
+      allow create: if isAuthenticated() &&
+                      (!('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid) &&
+                      request.resource.data.primaryUserId == request.auth.uid;
+    }
+
+    // =========================================================================
+    // 7. Verificações de E-mail (Fluxo de Registro/Login via Servidor)
+    // =========================================================================
+    match /email_verifications/{emailKey} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // 8. Sessões Remotas (Controle Remoto de Dispositivos)
+    // =========================================================================
+    match /remote_sessions/{code} {
+      allow create: if isAuthenticated();
+      allow read, update, delete: if isAuthenticated() && (
+        resource == null ||
+        resource.data.creatorId == request.auth.uid ||
+        resource.data.controllerUid == request.auth.uid ||
+        resource.data.controllerId == request.auth.uid ||
+        !('controllerUid' in resource.data) || 
+        resource.data.controllerUid == null
+      );
+    }
+  }
+}

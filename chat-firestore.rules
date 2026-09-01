@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Regra padrão de segurança máxima: nega leitura ou escrita por padrão
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // 1. Coleção de Usuários do Chat (chat_users)
+    // =========================================================================
+    match /chat_users/{userId} {
+      // Permite leitura e listagem pública para exibir nomes e carregar perfis em tempo real
+      allow read, list: if true;
+
+      // Permite criação de perfil vinculada estritamente ao UID autenticado e email correspondente
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && (
+          request.auth.token.email == null ||
+          request.auth.token.email == "" ||
+          request.resource.data.email == request.auth.token.email
+        )
+        && request.resource.data.username is string
+        && request.resource.data.username.size() > 0
+        && request.resource.data.username.size() <= 15
+        && request.resource.data.username.matches('^[A-Za-zÀ-ÖØ-öø-ÿ\\s]+$');
+
+      // Proíbe absolutamente qualquer alteração de nome ou e-mail após a criação (imutável)
+      allow update: if false;
+
+      // Impede remoção direta de registros de usuários para preservar autoria histórica
+      allow delete: if false;
+    }
+
+    // =========================================================================
+    // 2. Coleção de Mensagens Criptografadas do Chat (chat_messages)
+    // =========================================================================
+    match /chat_messages/{messageId} {
+      // Permite leitura de todas as mensagens criptografadas no feed global
+      allow read, list: if true;
+
+      // Permite envio de mensagens validadas estruturalmente e com verificação de email/uid autenticado
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && (
+          request.auth.token.email == null ||
+          request.auth.token.email == "" ||
+          request.resource.data.userEmail == request.auth.token.email
+        )
+        && request.resource.data.userName is string
+        && request.resource.data.userName.size() > 0
+        && request.resource.data.userName.size() <= 15
+        && request.resource.data.userName.matches('^[A-Za-zÀ-ÖØ-öø-ÿ\\s]+$')
+        && request.resource.data.mediaType in ['text', 'image', 'audio', 'video']
+        
+        // Garante integridade estrutural da mensagem baseada no tipo de mídia
+        && (request.resource.data.mediaType != 'text' || (
+          'textCiphertext' in request.resource.data && request.resource.data.textCiphertext is string &&
+          'textIv' in request.resource.data && request.resource.data.textIv is string
+        ))
+        && (request.resource.data.mediaType == 'text' || (
+          'mediaUrlCiphertext' in request.resource.data && request.resource.data.mediaUrlCiphertext is string &&
+          'mediaUrlIv' in request.resource.data && request.resource.data.mediaUrlIv is string
+        ));
+
+      // Mensagens no chat global são imutáveis e permanentes
+      allow update, delete: if false;
+    }
+
+    // =========================================================================
+    // 3. Indicadores de Digitação (typing_indicators)
+    // =========================================================================
+    match /typing_indicators/{userId} {
+      allow read, list: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // =========================================================================
+    // 4. Tokens de Notificação FCM (user_fcm_tokens)
+    // =========================================================================
+    match /user_fcm_tokens/{userId} {
+      // Permite que o próprio usuário autenticado registre ou atualize seu token FCM
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
