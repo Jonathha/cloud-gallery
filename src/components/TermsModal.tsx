@@ -34,6 +34,7 @@ export default function TermsModal({ isOpen, onClose }: TermsModalProps) {
               </div>
             </div>
           </div>
+        </motion.div>
       )}
     </AnimatePresence>
   );
