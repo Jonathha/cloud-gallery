@@ -90,8 +90,10 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
     };
   }, [img, fetchFullMedia]);
 
-  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-    const { naturalWidth, naturalHeight } = e.currentTarget;
+  const handleMediaLoad = (e: React.SyntheticEvent<HTMLImageElement | HTMLVideoElement, Event>) => {
+    const target = e.currentTarget;
+    const naturalWidth = "naturalWidth" in target ? target.naturalWidth : target.videoWidth;
+    const naturalHeight = "naturalHeight" in target ? target.naturalHeight : target.videoHeight;
     if (naturalWidth && naturalHeight) {
       setAspectRatio(naturalWidth / naturalHeight);
     }
@@ -108,7 +110,7 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
     displayUrl,
     isVisible,
     aspectRatio,
-    handleImageLoad,
+    handleMediaLoad,
     handleImageError,
   };
 }
