@@ -10,6 +10,7 @@ interface UseGalleryItemObserverProps {
 export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemObserverProps) {
   const itemRef = useRef<HTMLDivElement>(null);
   const isVisibleRef = useRef(false);
+  const mediaLoadRef = useRef<Promise<void> | null>(null);
   const [displayUrl, setDisplayUrl] = useState<string>(img.url);
   const [isVisible, setIsVisible] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<number>(1);
@@ -24,11 +25,23 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
   useEffect(() => {
     let isMounted = true;
 
+    const ensureMediaLoaded = () => {
+      if (img.isVideo ? getVideoObjectURL(img.id) : getImageObjectURL(img.id)) {
+        return Promise.resolve();
+      }
+      if (!mediaLoadRef.current) {
+        mediaLoadRef.current = fetchFullMedia(img, true).finally(() => {
+          mediaLoadRef.current = null;
+        });
+      }
+      return mediaLoadRef.current;
+    };
+
     const preloadObserver = new IntersectionObserver(
       (entries) => {
         if (!entries[0].isIntersecting) return;
 
-        fetchFullMedia(img, true)
+        ensureMediaLoaded()
           .then(() => {
             if (!isMounted || !isVisibleRef.current) return;
             const original = img.isVideo ? getVideoObjectURL(img.id) : getImageObjectURL(img.id);
@@ -61,7 +74,7 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
           return;
         }
 
-        fetchFullMedia(img, true)
+        ensureMediaLoaded()
           .then(() => {
             if (!isMounted || !isVisibleRef.current) return;
             const loadedUrl = img.isVideo ? getVideoObjectURL(img.id) : getImageObjectURL(img.id);
@@ -80,6 +93,7 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
     return () => {
       isMounted = false;
       isVisibleRef.current = false;
+      mediaLoadRef.current = null;
       preloadObserver.disconnect();
       visibilityObserver.disconnect();
       if (img.isVideo) unpinVideoObjectURL(img.id);
