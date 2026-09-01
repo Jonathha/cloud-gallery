@@ -103,7 +103,7 @@ export default function GalleryItem({
               muted
               playsInline
               preload="none"
-              className="w-full h-full object-cover transition-all duration-500 group-hover:brightness-95 select-none"
+              className="w-full h-full object-contain transition-all duration-500 group-hover:brightness-95 select-none"
               style={{ display: "block" }}
               onError={handleImageError}
               onLoadedMetadata={handleMediaLoad}
@@ -113,7 +113,7 @@ export default function GalleryItem({
           ) : (
             <img
               src={displayUrl} alt="" loading="lazy" decoding="async"
-              className="w-full h-full object-cover transition-all duration-500 group-hover:brightness-95 select-none"
+              className="w-full h-full object-contain transition-all duration-500 group-hover:brightness-95 select-none"
               style={{ display: "block" }} referrerPolicy="no-referrer" draggable={false}
               onContextMenu={(e) => e.preventDefault()} onLoad={handleMediaLoad} onError={handleImageError}
             />
