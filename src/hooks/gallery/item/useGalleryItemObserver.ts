@@ -56,7 +56,6 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
 
         if (!visible) {
           setDisplayUrl(img.url);
-          releaseOriginal();
           return;
         }
 
