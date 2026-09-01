@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import { DecryptedImage } from "../../../types";
-import { getImageObjectURL, getVideoObjectURL, revokeImageObjectURL, revokeVideoObjectURL } from "../../../utils/fileCrypto";
+import { getImageObjectURL, getVideoObjectURL, pinImageObjectURL, pinVideoObjectURL, unpinImageObjectURL, unpinVideoObjectURL } from "../../../utils/fileCrypto";
 
 interface UseGalleryItemObserverProps {
   img: DecryptedImage;
@@ -23,15 +23,6 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
 
   useEffect(() => {
     let isMounted = true;
-
-    const releaseOriginal = () => {
-      if (img.isVideo) {
-        revokeVideoObjectURL(img.id);
-      } else {
-        revokeImageObjectURL(img.id);
-      }
-      img.originalUrl = undefined;
-    };
 
     const preloadObserver = new IntersectionObserver(
       (entries) => {
@@ -56,8 +47,13 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
 
         if (!visible) {
           setDisplayUrl(img.url);
+          if (img.isVideo) unpinVideoObjectURL(img.id);
+          else unpinImageObjectURL(img.id);
           return;
         }
+
+        if (img.isVideo) pinVideoObjectURL(img.id);
+        else pinImageObjectURL(img.id);
 
         const original = img.isVideo ? getVideoObjectURL(img.id) : getImageObjectURL(img.id);
         if (original) {
@@ -86,7 +82,8 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
       isVisibleRef.current = false;
       preloadObserver.disconnect();
       visibilityObserver.disconnect();
-      releaseOriginal();
+      if (img.isVideo) unpinVideoObjectURL(img.id);
+      else unpinImageObjectURL(img.id);
     };
   }, [img, fetchFullMedia]);
 
@@ -100,9 +97,7 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
   };
 
   const handleImageError = () => {
-    if (displayUrl !== img.url) {
-      setDisplayUrl(img.url);
-    }
+    if (displayUrl !== img.url) setDisplayUrl(img.url);
   };
 
   return {
