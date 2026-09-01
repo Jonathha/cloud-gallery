@@ -24,6 +24,15 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
   useEffect(() => {
     let isMounted = true;
 
+    const releaseOriginal = () => {
+      if (img.isVideo) {
+        revokeVideoObjectURL(img.id);
+      } else {
+        revokeImageObjectURL(img.id);
+      }
+      img.originalUrl = undefined;
+    };
+
     const preloadObserver = new IntersectionObserver(
       (entries) => {
         if (!entries[0].isIntersecting) return;
@@ -47,11 +56,7 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
 
         if (!visible) {
           setDisplayUrl(img.url);
-          if (img.isVideo) {
-            revokeVideoObjectURL(img.id);
-          } else {
-            revokeImageObjectURL(img.id);
-          }
+          releaseOriginal();
           return;
         }
 
@@ -82,11 +87,7 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
       isVisibleRef.current = false;
       preloadObserver.disconnect();
       visibilityObserver.disconnect();
-      if (img.isVideo) {
-        revokeVideoObjectURL(img.id);
-      } else {
-        revokeImageObjectURL(img.id);
-      }
+      releaseOriginal();
     };
   }, [img, fetchFullMedia]);
 
