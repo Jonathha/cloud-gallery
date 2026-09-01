@@ -50,82 +50,101 @@ export default function GalleryActiveTabContent({
   settingsSubTab = 'menu',
   setSettingsSubTab,
 }: GalleryActiveTabContentProps) {
+  const galleryContent = (
+    <div className={activeTab === "gallery" ? "contents" : "hidden"}>
+      <GalleryGrid
+        loading={loading}
+        images={images}
+        isSelectionMode={isSelectionMode}
+        setIsSelectionMode={setIsSelectionMode}
+        selectedForDeletion={selectedForDeletion}
+        setSelectedForDeletion={setSelectedForDeletion}
+        securityImageId={securityImageId}
+        isExtraUnlocked={isExtraUnlocked}
+        extraPassword={extraPassword}
+        handleImageClick={handleImageClick}
+        fetchFullMedia={fetchFullMedia}
+        setImageToDelete={setImageToDelete}
+        setImageToProtect={setImageToProtect}
+        setIsUploaderOpen={setIsUploaderOpen}
+      />
+    </div>
+  );
+
   if (activeTab === "protected") {
     return (
-      <ProtectedGallery
-        onBack={() => {
-          setActiveTab("gallery");
-          setIsSelectionMode(false);
-          setSelectedForDeletion([]);
-        }}
-        onLightboxToggle={setIsProtectedLightboxOpen}
-      />
+      <>
+        {galleryContent}
+        <ProtectedGallery
+          onBack={() => {
+            setActiveTab("gallery");
+            setIsSelectionMode(false);
+            setSelectedForDeletion([]);
+          }}
+          onLightboxToggle={setIsProtectedLightboxOpen}
+        />
+      </>
     );
   }
 
   if (activeTab === "trash") {
     return (
-      <TrashModal
-        isOpen={true}
-        onClose={() => setActiveTab("gallery")}
-        isInline={true}
-        onLightboxToggle={setIsProtectedLightboxOpen}
-      />
+      <>
+        {galleryContent}
+        <TrashModal
+          isOpen={true}
+          onClose={() => setActiveTab("gallery")}
+          isInline={true}
+          onLightboxToggle={setIsProtectedLightboxOpen}
+        />
+      </>
     );
   }
 
   if (activeTab === "settings") {
     return (
-      <SettingsModal
-        isOpen={true}
-        onClose={() => {
-          setActiveTab("gallery");
-          if (setSettingsSubTab) setSettingsSubTab("menu");
-        }}
-        images={images}
-        onOpenTrash={() => setActiveTab("trash")}
-        isInline={true}
-        initialTab={settingsSubTab}
-      />
+      <>
+        {galleryContent}
+        <SettingsModal
+          isOpen={true}
+          onClose={() => {
+            setActiveTab("gallery");
+            if (setSettingsSubTab) setSettingsSubTab("menu");
+          }}
+          images={images}
+          onOpenTrash={() => setActiveTab("trash")}
+          isInline={true}
+          initialTab={settingsSubTab}
+        />
+      </>
     );
   }
 
   if (activeTab === "admin") {
     return (
-      <AdminTab
-        showToast={(msg, type) => {
-          const event = new CustomEvent('show-app-toast', { detail: { message: msg, type: type || 'success' } });
-          window.dispatchEvent(event);
-        }}
-        onBackToGallery={() => setActiveTab("gallery")}
-      />
+      <>
+        {galleryContent}
+        <AdminTab
+          showToast={(msg, type) => {
+            const event = new CustomEvent('show-app-toast', { detail: { message: msg, type: type || 'success' } });
+            window.dispatchEvent(event);
+          }}
+          onBackToGallery={() => setActiveTab("gallery")}
+        />
+      </>
     );
   }
 
   if (activeTab === "roulette") {
     return (
-      <RouletteTab
-        onBack={() => setActiveTab("gallery")}
-      />
+      <>
+        {galleryContent}
+        <RouletteTab
+          onBack={() => setActiveTab("gallery")}
+        />
+      </>
     );
   }
 
-  return (
-    <GalleryGrid
-      loading={loading}
-      images={images}
-      isSelectionMode={isSelectionMode}
-      setIsSelectionMode={setIsSelectionMode}
-      selectedForDeletion={selectedForDeletion}
-      setSelectedForDeletion={setSelectedForDeletion}
-      securityImageId={securityImageId}
-      isExtraUnlocked={isExtraUnlocked}
-      extraPassword={extraPassword}
-      handleImageClick={handleImageClick}
-      fetchFullMedia={fetchFullMedia}
-      setImageToDelete={setImageToDelete}
-      setImageToProtect={setImageToProtect}
-      setIsUploaderOpen={setIsUploaderOpen}
-    />
-  );
+  return galleryContent;
 }
