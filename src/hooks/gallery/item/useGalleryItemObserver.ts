@@ -11,6 +11,7 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
   const itemRef = useRef<HTMLDivElement>(null);
   const isVisibleRef = useRef(false);
   const [displayUrl, setDisplayUrl] = useState<string>(img.url);
+  const [isVisible, setIsVisible] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<number>(1);
 
   useEffect(() => {
@@ -22,12 +23,29 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
 
   useEffect(() => {
     let isMounted = true;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const isVisible = entries[0].isIntersecting;
-        isVisibleRef.current = isVisible;
 
-        if (!isVisible) {
+    const preloadObserver = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0].isIntersecting) return;
+
+        fetchFullMedia(img, true)
+          .then(() => {
+            if (!isMounted || !isVisibleRef.current) return;
+            const original = img.isVideo ? getVideoObjectURL(img.id) : getImageObjectURL(img.id);
+            if (original) setDisplayUrl(original);
+          })
+          .catch(() => {});
+      },
+      { rootMargin: "300px" }
+    );
+
+    const visibilityObserver = new IntersectionObserver(
+      (entries) => {
+        const visible = entries[0].isIntersecting;
+        isVisibleRef.current = visible;
+        setIsVisible(visible);
+
+        if (!visible) {
           setDisplayUrl(img.url);
           if (img.isVideo) {
             revokeVideoObjectURL(img.id);
@@ -37,35 +55,33 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
           return;
         }
 
+        const original = img.isVideo ? getVideoObjectURL(img.id) : getImageObjectURL(img.id);
+        if (original) {
+          setDisplayUrl(original);
+          return;
+        }
+
         fetchFullMedia(img, true)
           .then(() => {
-            if (!isMounted || !isVisibleRef.current) {
-              if (img.isVideo) {
-                revokeVideoObjectURL(img.id);
-              } else {
-                revokeImageObjectURL(img.id);
-              }
-              return;
-            }
-
-            const original = img.isVideo ? getVideoObjectURL(img.id) : getImageObjectURL(img.id);
-            if (original) {
-              setDisplayUrl(original);
-            }
+            if (!isMounted || !isVisibleRef.current) return;
+            const loadedUrl = img.isVideo ? getVideoObjectURL(img.id) : getImageObjectURL(img.id);
+            if (loadedUrl) setDisplayUrl(loadedUrl);
           })
           .catch(() => {});
       },
-      { rootMargin: "300px" }
+      { rootMargin: "0px" }
     );
 
     if (itemRef.current) {
-      observer.observe(itemRef.current);
+      preloadObserver.observe(itemRef.current);
+      visibilityObserver.observe(itemRef.current);
     }
 
     return () => {
       isMounted = false;
-      observer.disconnect();
       isVisibleRef.current = false;
+      preloadObserver.disconnect();
+      visibilityObserver.disconnect();
       if (img.isVideo) {
         revokeVideoObjectURL(img.id);
       } else {
@@ -90,6 +106,7 @@ export function useGalleryItemObserver({ img, fetchFullMedia }: UseGalleryItemOb
   return {
     itemRef,
     displayUrl,
+    isVisible,
     aspectRatio,
     handleImageLoad,
     handleImageError,
