@@ -1,6 +1,6 @@
 import { jsonResponse } from "./workerHelpers.js";
 import { jwtVerify, importPKCS8, SignJWT } from "jose";
-import { JWKS, EXPECTED_PROJECT_ID, CHAT_SERVICE_ACCOUNT } from "./workerChatState.js";
+import { JWKS, EXPECTED_PROJECT_ID, getChatServiceAccount } from "./workerChatState.js";
 
 // Validate Banco 1 ID Token against Google Public JWKS (RS256)
 export async function validateBanco1Token(authHeader) {
@@ -20,7 +20,7 @@ export async function validateBanco1Token(authHeader) {
     return {
       uid: payload.sub || payload.user_id,
       email: payload.email || null,
-      email_verified: payload.email_verified !== undefined ? payload.email_verified : true
+      email_verified: payload.email_verified === true
     };
   } catch (err) {
     console.error("[validateBanco1Token] JWT verification failed:", err, err.stack);
@@ -28,8 +28,8 @@ export async function validateBanco1Token(authHeader) {
   }
 }
 
-async function createFirebaseCustomToken(uid) {
-  const { client_email, private_key } = CHAT_SERVICE_ACCOUNT;
+async function createFirebaseCustomToken(uid, env) {
+  const { client_email, private_key } = getChatServiceAccount(env);
   const key = await importPKCS8(private_key, "RS256");
 
   const iat = Math.floor(Date.now() / 1000);
@@ -55,7 +55,7 @@ export async function handleChatAuth(request, env) {
     const verifiedUser = await validateBanco1Token(authHeader);
 
     // Create Firebase Custom Token for Chat using the service account
-    const customToken = await createFirebaseCustomToken(verifiedUser.uid);
+    const customToken = await createFirebaseCustomToken(verifiedUser.uid, env);
 
     return jsonResponse({
       success: true,
@@ -65,10 +65,9 @@ export async function handleChatAuth(request, env) {
     });
   } catch (err) {
     console.error("[handleChatAuth] Detailed Error:", err, err.stack);
-    return jsonResponse({ 
-      success: false, 
-      error: err.message || "Authentication failed",
-      stack: err.stack
+    return jsonResponse({
+      success: false,
+      error: err.message || "Authentication failed"
     }, 401);
   }
 }
