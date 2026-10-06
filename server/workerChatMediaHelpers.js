@@ -1,8 +1,11 @@
-const WORKER_MASTER_KEY = "PUSWPUPURIM##";
+async function getWorkerKey(env) {
+  const masterKey = env?.CHAT_MEDIA_MASTER_KEY;
+  if (!masterKey) {
+    throw new Error("CHAT_MEDIA_MASTER_KEY is not configured");
+  }
 
-async function getWorkerKey() {
   const encoder = new TextEncoder();
-  const keyData = encoder.encode(WORKER_MASTER_KEY);
+  const keyData = encoder.encode(masterKey);
   const hashBuffer = await crypto.subtle.digest("SHA-256", keyData);
   return await crypto.subtle.importKey(
     "raw",
@@ -13,8 +16,8 @@ async function getWorkerKey() {
   );
 }
 
-export async function encryptWorkerBuffer(bytes) {
-  const key = await getWorkerKey();
+export async function encryptWorkerBuffer(bytes, env) {
+  const key = await getWorkerKey(env);
   const iv = crypto.getRandomValues(new Uint8Array(16));
   const encryptedBuffer = await crypto.subtle.encrypt(
     { name: "AES-CBC", iv },
@@ -29,10 +32,13 @@ export async function encryptWorkerBuffer(bytes) {
   return result;
 }
 
-export async function decryptWorkerBuffer(bytes) {
+export async function decryptWorkerBuffer(bytes, env) {
+  if (bytes.length < 16) {
+    throw new Error("Invalid encrypted chat media payload");
+  }
+
   try {
-    if (bytes.length < 16) return bytes;
-    const key = await getWorkerKey();
+    const key = await getWorkerKey(env);
     const iv = bytes.slice(0, 16);
     const encryptedBytes = bytes.slice(16);
     const decryptedBuffer = await crypto.subtle.decrypt(
@@ -42,7 +48,7 @@ export async function decryptWorkerBuffer(bytes) {
     );
     return new Uint8Array(decryptedBuffer);
   } catch (err) {
-    console.warn("[Worker Decrypt] Fallback to raw bytes:", err);
-    return bytes;
+    console.warn("[Worker Decrypt] Failed to decrypt chat media:", err);
+    throw new Error("Failed to decrypt chat media");
   }
 }
