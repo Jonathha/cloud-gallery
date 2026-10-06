@@ -12,7 +12,7 @@ export async function handleChatMediaGet(request, env) {
     const arrBuffer = await objectOrBytes.arrayBuffer();
     const encryptedBytes = new Uint8Array(arrBuffer);
     const contentType = objectOrBytes.httpMetadata?.contentType || "application/octet-stream";
-    const decryptedBytes = await decryptWorkerBuffer(encryptedBytes);
+    const decryptedBytes = await decryptWorkerBuffer(encryptedBytes, env);
     return new Response(decryptedBytes, {
       headers: {
         "Access-Control-Allow-Origin": "*",
@@ -32,4 +32,3 @@ export async function handleChatMediaGet(request, env) {
   
   return jsonResponse({ success: false, error: "Chat media not found in R2" }, 404);
 }
-
