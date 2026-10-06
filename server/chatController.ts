@@ -119,7 +119,7 @@ router.get("/media/:key", async (req: Request, res: Response) => {
       return res.status(404).send("Chat media not found in Cloudflare R2");
     }
 
-    // Decrypt the chat file buffer on the fly using the master key PUSWPUPURIM##
+    // Decrypt the chat file buffer on the fly using the configured master key
     const decryptedData = decryptBuffer(result.data);
 
     // Set cache headers to avoid reloading frequently
