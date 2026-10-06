@@ -1,10 +1,10 @@
 import { jsonResponse } from "./workerHelpers.js";
 import { SignJWT, importPKCS8 } from "jose";
-import { CHAT_SERVICE_ACCOUNT } from "./workerChatState.js";
+import { getChatServiceAccount } from "./workerChatState.js";
 import { validateBanco1Token } from "./workerChatAuth.js";
 
-async function getGoogleAccessToken() {
-  const { client_email, private_key } = CHAT_SERVICE_ACCOUNT;
+async function getGoogleAccessToken(env) {
+  const { client_email, private_key } = getChatServiceAccount(env);
   const key = await importPKCS8(private_key, "RS256");
 
   const iat = Math.floor(Date.now() / 1000);
@@ -32,7 +32,8 @@ async function getGoogleAccessToken() {
 
   const data = await resp.json();
   if (!resp.ok) {
-    throw new Error(`Failed to get FCM token: ${JSON.stringify(data)}`);
+    console.error("[getGoogleAccessToken] Google OAuth token request failed:", data);
+    throw new Error("Failed to get Google access token");
   }
   return data.access_token;
 }
@@ -47,9 +48,10 @@ export async function handleChatNotify(request, env) {
     }
     
     const body = await request.json();
-    const { textToShow, senderUserId, userName, mediaType, textCiphertext, textIv, messageTime } = body;
+    const { textToShow, userName, mediaType, textCiphertext, textIv, messageTime } = body;
+    const senderUserId = verifiedUser.uid;
     
-    const accessToken = await getGoogleAccessToken();
+    const accessToken = await getGoogleAccessToken(env);
     
     // Fetch tokens from Firestore REST API
     const projectId = "chat-809dc";
@@ -86,7 +88,7 @@ export async function handleChatNotify(request, env) {
           },
           data: {
             type: "chat_message",
-            userId: senderUserId || "",
+            userId: senderUserId,
             userName: userName || "",
             textCiphertext: textCiphertext || "",
             textIv: textIv || "",
@@ -129,10 +131,9 @@ export async function handleChatNotify(request, env) {
     return jsonResponse({ success: true, results });
   } catch (err) {
     console.error("[handleChatNotify] Detailed Error:", err, err.stack);
-    return jsonResponse({ 
-      success: false, 
-      error: err.message || "Notification failed",
-      stack: err.stack
+    return jsonResponse({
+      success: false,
+      error: err.message || "Notification failed"
     }, 500);
   }
 }
