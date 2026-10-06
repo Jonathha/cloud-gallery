@@ -1,6 +1,5 @@
 import { Lock, Film, Image as ImageIcon, Play, Check, Trash2, Shield } from "lucide-react";
 import React, { useEffect, useRef } from "react";
-import { motion } from "motion/react";
 import { DecryptedImage } from "../types";
 import { useGalleryItemObserver } from "../hooks/gallery/item/useGalleryItemObserver";
 import { useGalleryItemTouch } from "../hooks/gallery/item/useGalleryItemTouch";
@@ -53,11 +52,11 @@ export default function GalleryItem({
   }, [isVisible, displayUrl, img.isVideo]);
 
   return (
-    <motion.div
+    <div
       ref={itemRef}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className={`bg-zinc-900/80 cursor-pointer group relative overflow-hidden transition-all duration-200 border select-none ${
+      className={`bg-zinc-900/80 cursor-pointer group relative overflow-hidden transition-[border-color,box-shadow,opacity,transform] duration-200 border select-none ${
         isSelectionMode
           ? isSelected
             ? "scale-[0.92] rounded-xl ring-2 ring-blue-500 border-transparent shadow-lg shadow-blue-950/30 z-10"
@@ -66,13 +65,14 @@ export default function GalleryItem({
       }`}
       style={{
         flexGrow: aspectRatio, flexBasis: `${aspectRatio * 160}px`,
-        height: "auto", maxHeight: "300px", aspectRatio: `${aspectRatio}`,
+        height: "auto", maxHeight: "300px", aspectRatio: `${aspectRatio}`, touchAction: "pan-y",
       }}
       onClick={touchHandlers.handleClick}
       onTouchStart={touchHandlers.handleTouchStart}
       onTouchEnd={touchHandlers.handleTouchEnd}
       onTouchMove={touchHandlers.handleTouchMove}
       onMouseDown={touchHandlers.handleMouseDown}
+      onMouseMove={touchHandlers.handleMouseMove}
       onMouseUp={touchHandlers.handleMouseUp}
       onMouseLeave={touchHandlers.handleMouseUp}
       onContextMenu={(e) => { e.preventDefault(); touchHandlers.triggerLongPressSelection(); }}
@@ -146,6 +146,6 @@ export default function GalleryItem({
           </button>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }
