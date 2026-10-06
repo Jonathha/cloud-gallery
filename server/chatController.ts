@@ -3,11 +3,12 @@ import crypto from "crypto";
 import { uploadChatMediaToR2, downloadChatMediaFromR2 } from "./r2Client";
 
 const router = express.Router();
-const MASTER_KEY = "PUSWPUPURIM##";
+const MASTER_KEY = process.env.CHAT_MEDIA_MASTER_KEY;
 
 // Derive 32-byte key for AES-256
 const getCryptoKey = (): Buffer => {
   const hash = crypto.createHash("sha256");
+  if (!MASTER_KEY) throw new Error("CHAT_MEDIA_MASTER_KEY is not configured");
   hash.update(MASTER_KEY);
   return hash.digest();
 };
@@ -23,14 +24,14 @@ function encryptBuffer(buffer: Buffer): Buffer {
 // Decrypt buffer using AES-256-CBC with prepended 16-byte random IV
 function decryptBuffer(buffer: Buffer): Buffer {
   try {
-    if (buffer.length < 16) return buffer;
+    if (buffer.length < 16) throw new Error("Invalid encrypted chat media payload");
     const iv = buffer.subarray(0, 16);
     const encrypted = buffer.subarray(16);
     const decipher = crypto.createDecipheriv("aes-256-cbc", getCryptoKey(), iv);
     return Buffer.concat([decipher.update(encrypted), decipher.final()]);
   } catch (err) {
-    console.warn("[DecryptBuffer] Error decrypting buffer, returning original raw buffer:", err);
-    return buffer;
+    console.warn("[DecryptBuffer] Error decrypting buffer:", err);
+    throw new Error("Failed to decrypt chat media");
   }
 }
 
@@ -83,7 +84,7 @@ router.post("/upload", async (req: Request, res: Response) => {
       }
     }
     
-    // Encrypt the chat file buffer securely at rest using the master key PUSWPUPURIM##
+    // Encrypt the chat file buffer securely at rest using the configured master key
     const encryptedBuffer = encryptBuffer(rawBuffer);
 
     const success = await uploadChatMediaToR2(fileName, encryptedBuffer, contentType);
