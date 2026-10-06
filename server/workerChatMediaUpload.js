@@ -21,7 +21,7 @@ export async function handleChatMediaUpload(request, env) {
       bytes[i] = binaryString.charCodeAt(i);
     }
     
-    const encryptedBytes = await encryptWorkerBuffer(bytes);
+    const encryptedBytes = await encryptWorkerBuffer(bytes, env);
     
     const bucket = env.CHAT_R2 || env.R2;
     if (!bucket) {
@@ -41,4 +41,3 @@ export async function handleChatMediaUpload(request, env) {
     return jsonResponse({ success: false, error: err.message || "Failed to upload chat media" }, 500);
   }
 }
-
