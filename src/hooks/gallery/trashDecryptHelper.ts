@@ -1,108 +1,39 @@
-import { decryptData, deriveKey } from '../../utils/crypto';
-import { decryptFileKey, decryptWithFileKey } from '../../utils/fileCrypto';
-import { removeFromTrash } from '../../utils/db';
+import { TrashImage } from './trash/types';
+import { resolveTrashKeys } from './trash/trashKeyDerivation';
+import { decryptChunkedTrashItem } from './trash/chunkedTrashDecrypt';
+import { decryptDirectTrashItem } from './trash/directTrashDecrypt';
 
-export interface TrashImage {
-  id: string;
-  url: string;
-  createdAt: any;
-  deletedAt?: number;
-  trashedAt?: number | any;
-  restoredAt?: number | any;
-  protectedAt?: number | any;
-  isVideo?: boolean;
-  noThumbnail?: boolean;
-}
+export * from './trash/types';
 
 export async function decryptSingleTrashItem(
-  item: any,
-  cryptoKey: CryptoKey | null | undefined,
-  extraPassword: string | null | undefined
+  item: any, cryptoKey: CryptoKey | null | undefined, extraPassword: string | null | undefined
 ): Promise<TrashImage | null> {
+  const isVideo = item?.contentType?.startsWith('video/') || false;
+  const base = {
+    id: item?.id,
+    createdAt: item?.createdAt,
+    deletedAt: item?.deletedAt || item?.trashedAt,
+    trashedAt: item?.trashedAt || item?.deletedAt,
+    restoredAt: item?.restoredAt,
+    protectedAt: item?.protectedAt,
+    isVideo,
+  };
   try {
-    if (!cryptoKey) throw new Error('No crypto key');
-    if (!item.ciphertext || !item.iv) {
-      console.warn(`Trash image ${item.id} is corrupted (missing ciphertext or iv). Removing from trash.`);
-      await removeFromTrash(item.id);
+    if (!cryptoKey || (!item.ciphertext && !item.thumbnailCiphertext) || (!item.iv && !item.thumbnailIv)) {
       return null;
     }
-
-    const isVideo = item.contentType?.startsWith('video/') || false;
     const isChunked = item.isChunked || item.ciphertext === 'chunked_vault_data';
-
-    let activeKey = cryptoKey;
-    if (item.isProtected && extraPassword && item.auxKey) {
-      try {
-        const salt = btoa(item.auxKey.slice(0, 16).padEnd(16, "0"));
-        activeKey = await deriveKey(extraPassword, salt);
-      } catch (deriveErr) {
-        console.error('Failed to derive combined key for protected trash item', deriveErr);
-      }
-    }
-
-    let fileKeyStr: string | null = null;
-    try {
-      if (item.fileKeyCiphertext && item.fileKeyIv && item.fileSalt) {
-        fileKeyStr = await decryptFileKey(item.fileKeyCiphertext, item.fileKeyIv, activeKey);
-      }
-    } catch (e) {
-      console.error('Failed to decrypt file key in trash', e);
-    }
-
+    const { activeKey, fileKeyStr } = await resolveTrashKeys(item, cryptoKey, extraPassword);
     if (isChunked) {
-      let decryptedUrl = '';
-      let noThumbnail = true;
-
-      if (item.thumbnailCiphertext && item.thumbnailIv) {
-        try {
-          if (fileKeyStr && item.fileSalt) {
-            decryptedUrl = await decryptWithFileKey(item.thumbnailCiphertext, item.thumbnailIv, fileKeyStr, item.fileSalt);
-          } else {
-            decryptedUrl = await decryptData(item.thumbnailCiphertext, item.thumbnailIv, activeKey);
-          }
-          noThumbnail = false;
-        } catch (e) {
-          console.warn('Could not decrypt trash thumbnail', e);
-        }
-      }
-
-      return {
-        id: item.id,
-        url: decryptedUrl,
-        createdAt: item.createdAt,
-        deletedAt: item.deletedAt || item.trashedAt,
-        trashedAt: item.trashedAt || item.deletedAt,
-        restoredAt: item.restoredAt,
-        protectedAt: item.protectedAt,
-        isVideo,
-        noThumbnail
-      };
-    } else {
-      let decryptedUrl = '';
-      if (fileKeyStr && item.fileSalt) {
-        decryptedUrl = await decryptWithFileKey(item.ciphertext, item.iv, fileKeyStr, item.fileSalt);
-      } else {
-        decryptedUrl = await decryptData(item.ciphertext, item.iv, activeKey);
-      }
-
-      if (!decryptedUrl.startsWith('data:') && !decryptedUrl.startsWith('blob:')) {
-        decryptedUrl = `data:${item.contentType || "image/jpeg"};base64,${decryptedUrl}`;
-      }
-
-      return {
-        id: item.id,
-        url: decryptedUrl,
-        createdAt: item.createdAt,
-        deletedAt: item.deletedAt || item.trashedAt,
-        trashedAt: item.trashedAt || item.deletedAt,
-        restoredAt: item.restoredAt,
-        protectedAt: item.protectedAt,
-        isVideo
-      };
+      const { decryptedUrl, noThumbnail } = await decryptChunkedTrashItem(item, activeKey, fileKeyStr);
+      return { ...base, url: decryptedUrl, noThumbnail };
     }
-  } catch (error) {
-    console.warn(`Trash image ${item.id} could not be decrypted (corrupted or wrong key). Removing from trash.`);
-    await removeFromTrash(item.id);
+    const url = await decryptDirectTrashItem(item, activeKey, fileKeyStr);
+    return { ...base, url };
+  } catch {
+    if (item?.id) {
+      return { ...base, url: '', noThumbnail: true };
+    }
     return null;
   }
 }

@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserPopupRedirectResolver } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
-import { getMessaging } from 'firebase/messaging';
+import type { Messaging } from 'firebase/messaging';
 
 // 1. New user-provided Firebase configuration (Primary)
 const newFirebaseConfig = {
@@ -29,29 +29,9 @@ export const dbPrimary = initializeFirestore(appPrimary, {
   }),
 });
 
-// Chat-specific secondary Firebase configuration
-const chatFirebaseConfig = {
-  apiKey: "AIzaSyCkLaRiXXoT2i0O_vffq94JOl-tOkWrH6I",
-  authDomain: "chat-809dc.firebaseapp.com",
-  projectId: "chat-809dc",
-  storageBucket: "chat-809dc.firebasestorage.app",
-  messagingSenderId: "587688988302",
-  appId: "1:587688988302:web:533c4581d5e4d4843c43df",
-  measurementId: "G-888H7XC2CY"
-};
-
-const appChat = initializeApp(chatFirebaseConfig, 'chat');
-export const authChat = initializeAuth(appChat, {
-  persistence: [browserLocalPersistence, indexedDBLocalPersistence],
-  popupRedirectResolver: browserPopupRedirectResolver,
-});
-export const dbChat = initializeFirestore(appChat, {});
-
-
-export let messagingChat: any = null;
-try {
-  messagingChat = getMessaging(appChat);
-} catch (e) { console.warn('Messaging not supported', e); }
+// Chat Global no longer uses a secondary Firebase/Firestore project. Main Firebase Auth remains the identity source.
+export const dbChat = dbPrimary;
+export const messagingChat: Messaging | null = null;
 
 // Dedicated Logs & Security Firebase configuration (gen-lang-client-0718492200)
 const logsFirebaseConfig = {

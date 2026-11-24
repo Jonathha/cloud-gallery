@@ -3,6 +3,7 @@ import { importKeyFromBase64, decryptData, deriveKey } from '../utils/crypto';
 import { useDevToolsBlocker } from './useDevToolsBlocker';
 import { base64ToBlobUrl } from '../utils/shareHelpers';
 import { getApiUrl } from '../utils/apiUrl';
+import { resetSecurityState } from '../utils/securityInterceptor';
 
 export function usePublicShareLogic() {
   const [shareId, setShareId] = useState<string | null>(null);
@@ -15,6 +16,11 @@ export function usePublicShareLogic() {
   const [downloadProgress, setDownloadProgress] = useState('');
   const [isDownloadingChunks, setIsDownloadingChunks] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [showCaptcha, setShowCaptcha] = useState(false);
+  const [turnstileKey, setTurnstileKey] = useState(1);
+  const [captchaStatus, setCaptchaStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle');
+  const [isHighDemand, setIsHighDemand] = useState(false);
+
   
   const timerRef = useRef<any>(null);
   const blobUrlRef = useRef<string | null>(null);
@@ -38,6 +44,18 @@ export function usePublicShareLogic() {
       keyHash = keyHash.trim().replace(/ /g, '+');
       keyHash = keyHash.replace(/-/g, '+').replace(/_/g, '/');
       e2eeKeyRef.current = keyHash;
+      if (id) {
+        try {
+          sessionStorage.setItem(`e2ee_share_key_${id}`, keyHash);
+        } catch (e) {}
+      }
+    } else if (id) {
+      try {
+        const cachedKey = sessionStorage.getItem(`e2ee_share_key_${id}`);
+        if (cachedKey) {
+          e2eeKeyRef.current = cachedKey;
+        }
+      } catch (e) {}
     }
 
     // Limpa o hash da URL imediatamente para evitar vazamento na barra de enderecos e historico do navegador
@@ -62,6 +80,48 @@ export function usePublicShareLogic() {
     };
   }, []);
 
+  const handleTurnstileVerify = async (token: string | null) => {
+    if (!token) return;
+    setCaptchaStatus('verifying');
+    setError('');
+    const currentId = shareId || new URLSearchParams(window.location.search).get('share');
+    try {
+      const verifyRes = await fetch(getApiUrl('/api/verify-recaptcha'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, module: 'share_view', shareId: currentId })
+      });
+      const verifyData = await verifyRes.json();
+      if (verifyData.success) {
+        if (verifyData.clearanceToken) {
+          try {
+            if (currentId) {
+              sessionStorage.setItem(`captcha_clearance_${currentId}`, verifyData.clearanceToken);
+              localStorage.setItem(`captcha_clearance_${currentId}`, verifyData.clearanceToken);
+            }
+            sessionStorage.setItem('captcha_clearance', verifyData.clearanceToken);
+            localStorage.setItem('captcha_clearance', verifyData.clearanceToken);
+          } catch (e) {}
+        }
+        resetSecurityState('share_view');
+        resetSecurityState('share');
+        setCaptchaStatus('success');
+        setShowCaptcha(false);
+        if (currentId) {
+          await fetchShareConfig(currentId);
+        }
+      } else {
+        setCaptchaStatus('error');
+        setError(verifyData.error || 'Falha na verificação de segurança.');
+        setTurnstileKey(prev => prev + 1);
+      }
+    } catch (err: any) {
+      setCaptchaStatus('error');
+      setError('Erro ao validar verificação de segurança.');
+      setTurnstileKey(prev => prev + 1);
+    }
+  };
+
   const fetchShareConfig = async (id: string) => {
     setLoading(true);
     setError('');
@@ -79,9 +139,32 @@ export function usePublicShareLogic() {
       let firstViewedTime = null;
       
       try {
-        const res = await fetch(getApiUrl(`/api/share/view/${id}`));
-        if (res.ok) {
-          const resData = await res.json();
+        const clearance = (typeof sessionStorage !== 'undefined' ? (sessionStorage.getItem(`captcha_clearance_${id}`) || sessionStorage.getItem('captcha_clearance')) : null) ||
+                          (typeof localStorage !== 'undefined' ? (localStorage.getItem(`captcha_clearance_${id}`) || localStorage.getItem('captcha_clearance')) : null);
+        const headers: Record<string, string> = {};
+        if (clearance) {
+          headers['X-Captcha-Clearance'] = clearance;
+        }
+
+        const res = await fetch(getApiUrl(`/api/share/view/${id}`), { headers });
+        const resData = await res.json().catch(() => null);
+
+        if (resData?.highDemand) {
+          setIsHighDemand(true);
+          setLoading(false);
+          return;
+        }
+
+        setIsHighDemand(false);
+
+        if (res.status === 429 || res.headers.get('X-Security-Captcha-Required') === 'true' || resData?.captchaRequired) {
+
+          setShowCaptcha(true);
+          setLoading(false);
+          return;
+        }
+
+        if (res.ok && resData) {
           if (resData.success && resData.share) {
             data = resData.share;
             const now = Date.now();
@@ -106,7 +189,7 @@ export function usePublicShareLogic() {
             throw new Error(resData.error);
           }
         } else {
-          throw new Error('Link de compartilhamento inválido ou já expirado.');
+          throw new Error(resData?.error || 'Link de compartilhamento inválido ou já expirado.');
         }
       } catch (serverErr: any) {
         console.warn('Erro ao carregar o compartilhamento pelo servidor:', serverErr);
@@ -126,7 +209,7 @@ export function usePublicShareLogic() {
       setShareData(compositeShareData);
 
       if (!data.options?.requirePassword) {
-        const keyHash = e2eeKeyRef.current;
+        const keyHash = e2eeKeyRef.current || (id ? sessionStorage.getItem(`e2ee_share_key_${id}`) : null);
         if (!keyHash) {
           throw new Error('Chave de criptografia ausente ou já consumida da URL.');
         }
@@ -175,6 +258,14 @@ export function usePublicShareLogic() {
     }
   }, [shareData, decryptedUrl]);
 
+  useEffect(() => {
+    if (!isHighDemand || !shareId) return;
+    const retryTimer = setInterval(() => {
+      fetchShareConfig(shareId);
+    }, 10000);
+    return () => clearInterval(retryTimer);
+  }, [isHighDemand, shareId]);
+
   const doDecryption = async (data: any, rawKeyBase64: string, currentShareId: string) => {
     setError('');
     let sanitizedKey = rawKeyBase64.trim().replace(/ /g, '+');
@@ -222,6 +313,11 @@ export function usePublicShareLogic() {
     downloadProgress,
     isDownloadingChunks,
     timeLeft,
+    showCaptcha,
+    turnstileKey,
+    captchaStatus,
+    isHighDemand,
+    handleTurnstileVerify,
     handlePasswordSubmit,
   };
 }

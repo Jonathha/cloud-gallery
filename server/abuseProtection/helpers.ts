@@ -35,8 +35,6 @@ export function getModuleAndId(req: Request): { module: ModuleType; id: string }
     return { module: 'upload', id: getAuthIdentifier(req) };
   } else if (path.startsWith('/api/storage')) {
     return { module: 'storage', id: getAuthIdentifier(req) };
-  } else if (path.startsWith('/api/roulette')) {
-    return { module: 'roulette', id: getAuthIdentifier(req) };
   } else if (path.startsWith('/api/logs')) {
     return { module: 'logs', id: getAuthIdentifier(req) };
   } else if (path.startsWith('/api/chat')) {

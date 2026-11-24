@@ -1,6 +1,9 @@
 import { jsonResponse } from "./workerHelpers.js";
 import { validateBanco1Token } from "./workerChat.js";
-import { checkMediaOwnershipWorker } from "./workerStorageUtils.js";
+import { checkMediaOwnershipWorker, parseAndValidateEncStructureWorker } from "./workerStorageUtils.js";
+import { saveUserMediaItem } from "./workerD1Storage.js";
+
+const MAX_UPLOAD_SIZE = 100 * 1024 * 1024; // 100MB max per upload
 
 function base64ToUint8Array(base64Str) {
   const binaryString = atob(base64Str);
@@ -33,12 +36,20 @@ export async function handleUploadRawImage(request, env) {
 
   const authUid = verifiedUser.uid;
 
+  const contentLength = parseInt(request.headers.get("content-length") || "0", 10);
+  if (!contentLength) {
+    return jsonResponse({ success: false, error: "Content-Length obrigatório." }, 411);
+  }
+  if (contentLength > MAX_UPLOAD_SIZE) {
+    return jsonResponse({ success: false, error: "Arquivo excede o tamanho máximo permitido (100MB)." }, 413);
+  }
+
   const fileKeyBase64 = request.headers.get("x-file-key");
   const fileSaltBase64 = request.headers.get("x-file-salt");
   const fileIvBase64 = request.headers.get("x-file-iv");
   const metadataBase64 = request.headers.get("x-file-metadata");
 
-  if (!fileKeyBase64 || !fileSaltBase64 || !fileIvBase64 || !metadataBase64) {
+  if (!fileSaltBase64 || !fileIvBase64 || !metadataBase64) {
     console.warn("[UploadRaw] Missing required headers for user:", authUid);
     return jsonResponse({ success: false, error: "Headers obrigatórios ausentes para o upload bruto" }, 400);
   }
@@ -69,7 +80,7 @@ export async function handleUploadRawImage(request, env) {
 
   let fileKey, isV2, saltBytes, ivBytes;
   try {
-    fileKey = base64ToUtf8(fileKeyBase64);
+    fileKey = fileKeyBase64 ? base64ToUtf8(fileKeyBase64) : null;
     isV2 = fileSaltBase64 && fileSaltBase64.startsWith("v2_");
     saltBytes = isV2 ? null : base64ToUint8Array(fileSaltBase64);
     ivBytes = base64ToUint8Array(fileIvBase64);
@@ -84,17 +95,31 @@ export async function handleUploadRawImage(request, env) {
     return jsonResponse({ success: false, error: "Arquivo enviado está vazio" }, 400);
   }
 
+  if (rawBuffer.byteLength > MAX_UPLOAD_SIZE) {
+    return jsonResponse({ success: false, error: "Arquivo excede o tamanho máximo permitido (100MB)." }, 413);
+  }
+
   const contentType = metadata.contentType || "application/octet-stream";
 
-  let encBuffer;
-  const view = new DataView(rawBuffer);
-  const isAlreadyPacked = rawBuffer.byteLength >= 8 &&
-    view.getUint8(0) === 0x45 && view.getUint8(1) === 0x4e && view.getUint8(2) === 0x43; // 'ENC'
+  const encValidation = parseAndValidateEncStructureWorker(rawBuffer);
+  if (encValidation.isEnc && !encValidation.isValid) {
+    return jsonResponse({ success: false, error: encValidation.error || "Arquivo .enc malformado ou corrompido" }, 400);
+  }
 
-  if (isAlreadyPacked) {
+  let encBuffer;
+  if (encValidation.isEnc && encValidation.isValid) {
+    if (encValidation.metadata.id !== id) {
+      return jsonResponse({ success: false, error: "Conflito: id nos metadados internos não corresponde ao identificador do recurso." }, 400);
+    }
+    if (encValidation.metadata.userId !== authUid) {
+      return jsonResponse({ success: false, error: "Acesso negado: userId nos metadados internos não corresponde ao usuário autenticado." }, 403);
+    }
     encBuffer = rawBuffer;
   } else {
     // Web Crypto PBKDF2 + AES-GCM Encryption
+    if (!fileKey) {
+      return jsonResponse({ success: false, error: "Header x-file-key obrigatório para upload não cifrado" }, 400);
+    }
     let encryptedArrayBuffer;
     try {
       let aesKey;
@@ -200,7 +225,7 @@ export async function handleUploadRawImage(request, env) {
       return jsonResponse({ success: false, error: "Serviço de armazenamento (R2) indisponível" }, 500);
     }
 
-    const ownership = await checkMediaOwnershipWorker(id, authUid, authHeader, bucket);
+    const ownership = await checkMediaOwnershipWorker(id, authUid, authHeader, bucket, env.DB);
     if (ownership.exists && !ownership.allowed) {
       return jsonResponse({ success: false, error: "Conflito: A mídia já existe e não pertence ao usuário." }, 409);
     }
@@ -209,6 +234,43 @@ export async function handleUploadRawImage(request, env) {
       httpMetadata: { contentType: "application/octet-stream" }
     });
     console.log(`[UploadRaw] Successfully uploaded images/${id}.enc to R2 bucket for user: ${authUid}`);
+
+    if (env.DB) {
+      try {
+        const mediaItem = {
+          id,
+          userId: authUid,
+          fileName: metadata.fileName || metadata.name || `midia_${id}`,
+          name: metadata.name || metadata.fileName || `midia_${id}`,
+          contentType: contentType || "image/jpeg",
+          fileSize: rawBuffer.byteLength,
+          totalSize: rawBuffer.byteLength,
+          width: metadata.width || 0,
+          height: metadata.height || 0,
+          duration: metadata.duration || 0,
+          isVideo: metadata.isVideo || (contentType && contentType.startsWith("video/")) || false,
+          isProtected: !!metadata.isProtected,
+          takenAt: metadata.takenAt || null,
+          uploadedAt: metadata.uploadedAt || new Date(serverTimestamp).toISOString(),
+          createdAt: serverTimestamp,
+          timestamp: serverTimestamp,
+          r2Key: `images/${id}.enc`,
+          thumbnailKey: `thumbnails/${id}.enc`,
+          iv: fileIvBase64 || metadata.iv || "",
+          thumbnailIv: metadata.thumbnailIv || "",
+          fileKeyCiphertext: metadata.fileKeyCiphertext || "",
+          fileKeyIv: metadata.fileKeyIv || "",
+          fileSalt: fileSaltBase64 || metadata.fileSalt || ""
+        };
+        const saved = await saveUserMediaItem(env.DB, authUid, mediaItem);
+        if (!saved) {
+          return jsonResponse({ success: false, error: "Não foi possível persistir os metadados da mídia." }, 500);
+        }
+      } catch (d1Err) {
+        console.error("[UploadRaw] D1 save failed:", d1Err);
+        return jsonResponse({ success: false, error: "Não foi possível persistir os metadados da mídia." }, 500);
+      }
+    }
 
     return jsonResponse({
       success: true,

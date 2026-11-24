@@ -30,3 +30,13 @@ export async function createShareApi(shareDocData: any, token: string) {
   });
   return res;
 }
+
+export async function fetchMyShares(token: string) {
+  const res = await fetch(getApiUrl('/api/share/mine'), {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  return res;
+}
+

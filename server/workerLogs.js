@@ -7,7 +7,6 @@
 
 export {
   handleRecordLog,
-  handleFetchLogs,
   writeLogsDocREST,
   listLogsDocREST
 } from "./workerLogs/index.js";

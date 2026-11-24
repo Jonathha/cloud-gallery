@@ -15,7 +15,7 @@ export async function getApkDownloadUrl(): Promise<{ url: string; key: string } 
     });
     
     const response = await client.send(listCommand);
-    let selectedKey = "app-release.apk"; 
+    let selectedKey = "Guarly.apk"; 
     
     if (response.Contents && response.Contents.length > 0) {
       const apkObjects = response.Contents.filter(item => 

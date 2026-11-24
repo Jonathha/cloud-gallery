@@ -1,144 +1,78 @@
-import { useRef } from "react";
+import { useRef, useCallback, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { DecryptedImage } from "../../types";
-import { getImageFromCache } from "../../utils/db";
 import { checkExistingObjectURL } from "./mediaCache";
-import { resolveSecurityKey } from "./mediaSecurity";
-import { loadVideoFromCache } from "./mediaVideoCacheLoader";
-import { loadVideoFromRemote } from "./mediaVideoRemoteLoader";
-import { loadImageFromCache } from "./mediaImageCacheLoader";
-import { loadImageFromRemote } from "./mediaImageRemoteLoader";
-import { getVideoObjectURL, getImageObjectURL } from "../../utils/fileCrypto";
-
-interface UseGalleryMediaFetcherProps {
-  isExtraUnlocked?: boolean;
-  setSelectedImage: (url: string | null) => void;
-  setSelectedImageId: (id: string | null) => void;
-  setDownloadingFull: (val: boolean) => void;
-  setFullDownloadProgress: (progress: string) => void;
-  showToast: (msg: string, type?: "success" | "error") => void;
-  getActiveId?: () => string | null;
-}
+import { UseGalleryMediaFetcherProps } from "./fetcher/types";
+import { performMediaFetch } from "./fetcher/performMediaFetch";
+import { handleInFlight } from "./fetcher/inFlightHandler";
+import { mediaScheduler } from "../../utils/mediaScheduler";
 
 export function useGalleryMediaFetcher({
-  isExtraUnlocked,
-  setSelectedImage,
-  setSelectedImageId,
-  setDownloadingFull,
-  setFullDownloadProgress,
-  showToast,
-  getActiveId,
+  isExtraUnlocked, setSelectedImage, setSelectedImageId, setDownloadingFull,
+  setFullDownloadProgress, showToast, getActiveId,
 }: UseGalleryMediaFetcherProps) {
   const { user, cryptoKey, extraPassword, securityImageId } = useAuth();
   const inFlightRequestsRef = useRef<Map<string, Promise<void>>>(new Map());
 
-  const fetchFullMedia = async (img: DecryptedImage, isPreload = false) => {
-    const isVideo = img.isVideo || img.contentType?.startsWith("video/") || false;
-    
-    if (checkExistingObjectURL(img, isVideo, isPreload, setSelectedImage)) {
-      return;
-    }
+  const latestRef = useRef({
+    isExtraUnlocked, setSelectedImage, setSelectedImageId, setDownloadingFull,
+    setFullDownloadProgress, showToast, getActiveId,
+    user, cryptoKey, extraPassword, securityImageId
+  });
 
-    // Se já houver uma operação em andamento para esta mídia, aguarda a mesma Promise
-    const inFlightPromise = inFlightRequestsRef.current.get(img.id);
-    if (inFlightPromise) {
-      if (!isPreload) {
-        setSelectedImage(img.url || null);
-        setDownloadingFull(true);
-      }
-      try {
-        await inFlightPromise;
-        const objectUrl = isVideo ? getVideoObjectURL(img.id) : getImageObjectURL(img.id);
-        const resolvedUrl = objectUrl || img.originalUrl;
-        if (resolvedUrl && !isPreload && (!getActiveId || getActiveId() === img.id)) {
-          setSelectedImage(resolvedUrl);
-        }
-      } catch (err: any) {
-        if (!isPreload && (!getActiveId || getActiveId() === img.id)) {
-          if (img.url) {
-            setSelectedImage(img.url);
-          } else {
-            showToast(err.message || "Erro ao carregar ou descriptografar mídia completa.", "error");
-            setSelectedImage(null);
-            setSelectedImageId(null);
-          }
-        }
-      } finally {
-        if (!isPreload && (!getActiveId || getActiveId() === img.id)) {
-          setDownloadingFull(false);
-          setFullDownloadProgress("");
-        }
-      }
-      return;
-    }
-
-    if (!isPreload) setSelectedImage(img.url || null);
-
-    const performFetch = async () => {
-      const activeKey = await resolveSecurityKey(
-        img.id, cryptoKey!, securityImageId, isExtraUnlocked, extraPassword
-      );
-
-      if (!isPreload) setDownloadingFull(true);
-      
-      let decryptedFromCache = false;
-      const cached = await getImageFromCache(img.id);
-
-      if (cached && cached.ciphertext && cached.ciphertext !== "chunked_vault_data") {
-        if (isVideo) {
-          decryptedFromCache = await loadVideoFromCache(
-            img, cached, activeKey, isPreload, setSelectedImage, setFullDownloadProgress, getActiveId
-          );
-        } else {
-          decryptedFromCache = await loadImageFromCache(
-            img, cached, activeKey, isPreload, setSelectedImage, getActiveId
-          );
-        }
-      }
-
-      if (!decryptedFromCache && user) {
-        if (!isPreload) setFullDownloadProgress("Carregando do cofre seguro...");
-        try {
-          const token = await user.getIdToken(false).catch(() => undefined);
-          if (isVideo) {
-            await loadVideoFromRemote(
-              img, token, activeKey, cached, isPreload, setSelectedImage, setFullDownloadProgress, getActiveId
-            );
-          } else {
-            await loadImageFromRemote(
-              img, token, activeKey, cached, isPreload, setSelectedImage, getActiveId
-            );
-          }
-        } catch (fetchErr: any) {
-          throw new Error(fetchErr.message || "Erro ao baixar ou descriptografar mídia do cofre.");
-        }
-      }
+  useEffect(() => {
+    latestRef.current = {
+      isExtraUnlocked, setSelectedImage, setSelectedImageId, setDownloadingFull,
+      setFullDownloadProgress, showToast, getActiveId,
+      user, cryptoKey, extraPassword, securityImageId
     };
+  });
 
-    const taskPromise = performFetch();
-    inFlightRequestsRef.current.set(img.id, taskPromise);
+  const fetchFullMedia = useCallback(async (img: DecryptedImage, isPreload = false, priority?: number) => {
+    const {
+      isExtraUnlocked, setSelectedImage, setSelectedImageId, setDownloadingFull,
+      setFullDownloadProgress, showToast, getActiveId,
+      user, cryptoKey, extraPassword, securityImageId
+    } = latestRef.current;
 
-    try {
-      await taskPromise;
-    } catch (err: any) {
-      console.error("Error loading full asset", err);
+    const isVideo = img.isVideo || img.contentType?.startsWith("video/") || false;
+    if (checkExistingObjectURL(img, isVideo, isPreload, setSelectedImage)) return;
+    
+    const resolvedPriority = priority !== undefined ? priority : (isPreload ? 1 : 3);
+    const inFlight = inFlightRequestsRef.current.get(img.id);
+    if (inFlight) {
+      mediaScheduler.enqueue(img.id, resolvedPriority, () =>
+        performMediaFetch({ img, isVideo, isPreload, cryptoKey, securityImageId, isExtraUnlocked, extraPassword, user, setSelectedImage, setDownloadingFull, setFullDownloadProgress, getActiveId })
+      );
+      return handleInFlight(inFlight, img, isVideo, isPreload, setSelectedImage, setSelectedImageId, setDownloadingFull, setFullDownloadProgress, showToast, getActiveId);
+    }
+    if (!isPreload) setSelectedImage(img.url || null);
+    
+    const task = mediaScheduler.enqueue(img.id, resolvedPriority, () =>
+      performMediaFetch({ img, isVideo, isPreload, cryptoKey, securityImageId, isExtraUnlocked, extraPassword, user, setSelectedImage, setDownloadingFull, setFullDownloadProgress, getActiveId })
+    );
+    
+    inFlightRequestsRef.current.set(img.id, task);
+    try { await task; } catch (err: any) {
+      const is404Missing = err && typeof err.message === 'string' && (err.message.includes('404') || err.message.includes('não encontrada'));
+      if (is404Missing) {
+        img.isMissing = true;
+      }
       if (!isPreload && (!getActiveId || getActiveId() === img.id)) {
-        if (img.url) {
-          setSelectedImage(img.url);
-        } else {
-          showToast(err.message || "Erro ao carregar ou descriptografar mídia completa.", "error");
+        if (img.url && !is404Missing) setSelectedImage(img.url);
+        else {
+          if (!is404Missing) {
+            showToast(err.message || "Erro ao carregar mídia.", "error");
+          }
           setSelectedImage(null);
           setSelectedImageId(null);
         }
       }
     } finally {
       inFlightRequestsRef.current.delete(img.id);
-      if (!isPreload && (!getActiveId || getActiveId() === img.id)) {
-        setDownloadingFull(false);
-        setFullDownloadProgress("");
-      }
+      if (!isPreload && (!getActiveId || getActiveId() === img.id)) { setDownloadingFull(false); setFullDownloadProgress(""); }
     }
-  };
+  }, []);
 
   return { fetchFullMedia };
 }

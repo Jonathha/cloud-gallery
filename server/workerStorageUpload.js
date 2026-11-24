@@ -1,13 +1,26 @@
 import { jsonResponse } from "./workerHelpers.js";
 import { validateBanco1Token } from "./workerChat.js";
 import { isEncBinary, wrapJsonToEnc, checkMediaOwnershipWorker } from "./workerStorageUtils.js";
+import { saveUserMediaItem } from "./workerD1Storage.js";
 
 const MAX_UPLOAD_SIZE = 100 * 1024 * 1024; // 100MB max per upload
 
+
 export async function handleUploadImage(request, env) {
   const contentLength = parseInt(request.headers.get("content-length") || "0", 10);
+  if (!contentLength) {
+    return jsonResponse({ success: false, error: "Content-Length obrigatório." }, 411);
+  }
   if (contentLength > MAX_UPLOAD_SIZE) {
     return jsonResponse({ success: false, error: "Arquivo excede o tamanho máximo permitido (100MB)." }, 413);
+  }
+
+  const authHeader = request.headers.get("Authorization");
+  let verifiedUser;
+  try {
+    verifiedUser = await validateBanco1Token(authHeader);
+  } catch (err) {
+    return jsonResponse({ success: false, error: `Acesso não autorizado: ${err.message}` }, 401);
   }
 
   let buffer = await request.arrayBuffer();
@@ -45,27 +58,16 @@ export async function handleUploadImage(request, env) {
     return jsonResponse({ success: false, error: "Metadados incompletos ou ID inválido no arquivo .enc" }, 400);
   }
 
-  const authHeader = request.headers.get("Authorization");
-  let verifiedUser;
-  try {
-    verifiedUser = await validateBanco1Token(authHeader);
-  } catch (err) {
-    return jsonResponse({ success: false, error: `Acesso não autorizado: ${err.message}` }, 401);
-  }
-
   const authenticatedUserId = verifiedUser.uid;
   if (userId !== authenticatedUserId) {
     return jsonResponse({ success: false, error: "Acesso negado: userId nos metadados não corresponde ao usuário autenticado." }, 403);
   }
   const serverTimestamp = Date.now();
-
-  // Strip client dates and set authoritative server timestamp
-  delete metadata.createdAt;
-  delete metadata.timestamp;
-  delete metadata.serverCreatedAt;
-  delete metadata.serverTimestamp;
-  metadata.createdAt = serverTimestamp;
-  metadata.timestamp = serverTimestamp;
+  // Preserve historical dates if present; only default if new
+  if (!metadata.createdAt && !metadata.timestamp) {
+    metadata.createdAt = serverTimestamp;
+    metadata.timestamp = serverTimestamp;
+  }
 
   try {
     const bucket = env.R2 || env.CHAT_R2;
@@ -73,7 +75,7 @@ export async function handleUploadImage(request, env) {
       return jsonResponse({ success: false, error: "Armazenamento R2 não configurado" }, 500);
     }
 
-    const ownership = await checkMediaOwnershipWorker(id, authenticatedUserId, authHeader, bucket);
+    const ownership = await checkMediaOwnershipWorker(id, authenticatedUserId, authHeader, bucket, env.DB);
     if (ownership.exists && !ownership.allowed) {
       return jsonResponse({ success: false, error: "Conflito: A mídia já existe e não pertence ao usuário." }, 409);
     }
@@ -83,13 +85,51 @@ export async function handleUploadImage(request, env) {
     });
     console.log(`[WorkerUpload] Uploaded images/${id}.enc to R2 bucket for user ${authenticatedUserId}`);
 
+    if (env.DB) {
+      try {
+        const mediaItem = {
+          id,
+          userId: authenticatedUserId,
+          fileName: metadata.fileName || metadata.name || `midia_${id}`,
+          name: metadata.name || metadata.fileName || `midia_${id}`,
+          contentType: metadata.contentType || "image/jpeg",
+          fileSize: buffer.byteLength,
+          totalSize: metadata.totalSize || buffer.byteLength,
+          width: metadata.width || 0,
+          height: metadata.height || 0,
+          duration: metadata.duration || 0,
+          isVideo: metadata.isVideo || false,
+          isProtected: !!metadata.isProtected,
+          takenAt: metadata.takenAt || null,
+          uploadedAt: metadata.uploadedAt || new Date(metadata.createdAt || serverTimestamp).toISOString(),
+          createdAt: metadata.createdAt || serverTimestamp,
+          timestamp: metadata.timestamp || serverTimestamp,
+          r2Key: `images/${id}.enc`,
+          thumbnailKey: `thumbnails/${id}.enc`,
+          iv: metadata.iv || "",
+          thumbnailIv: metadata.thumbnailIv || "",
+          fileKeyCiphertext: metadata.fileKeyCiphertext || "",
+          fileKeyIv: metadata.fileKeyIv || "",
+          fileSalt: metadata.fileSalt || ""
+        };
+        const saved = await saveUserMediaItem(env.DB, authenticatedUserId, mediaItem);
+        if (!saved) {
+          return jsonResponse({ success: false, error: "Não foi possível persistir os metadados da mídia." }, 500);
+        }
+      } catch (d1Err) {
+        console.error("[WorkerUpload] D1 save failed:", d1Err);
+        return jsonResponse({ success: false, error: "Não foi possível persistir os metadados da mídia." }, 500);
+      }
+    }
+
     return jsonResponse({
       success: true,
       id,
-      createdAt: serverTimestamp,
-      timestamp: serverTimestamp,
+      createdAt: metadata.createdAt || serverTimestamp,
+      timestamp: metadata.timestamp || serverTimestamp,
       syncedToDrive: false
     });
+
   } catch (err) {
     console.error("Upload Error:", err);
     return jsonResponse({ success: false, error: `Upload error: ${err.message}` }, 500);

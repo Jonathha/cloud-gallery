@@ -10,3 +10,5 @@ export function getRealFirebaseUser(contextUser: any): User | null {
   }
   return null;
 }
+
+export { MAX_SHARE_LINKS, describeShare } from './shareConstants';

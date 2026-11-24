@@ -1,0 +1,51 @@
+@layer base {
+  html.theme-light input::placeholder,
+  html.theme-light textarea::placeholder {
+    color: #94a3b8 !important;
+  }
+
+  html.theme-light input:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+    -webkit-text-fill-color: #0f172a !important;
+  }
+
+  /* Modal backdrops stay dark translucent in Light mode */
+  html.theme-light .bg-black\/80,
+  html.theme-light .bg-black\/50,
+  html.theme-light .bg-black\/40 {
+    background-color: rgba(15, 23, 42, 0.5) !important;
+  }
+
+  /* Terms of Service & Privacy Modal in Light mode */
+  html.theme-light #terms-modal-container,
+  html.theme-light #terms-modal-wrapper {
+    background-color: #f8fafc !important;
+  }
+  html.theme-light #terms-modal-header {
+    background-color: rgba(255, 255, 255, 0.94) !important;
+    border-color: #e2e8f0 !important;
+  }
+  html.theme-light #security-highlights-banner {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+  }
+
+  /* Install App Banner in Light mode */
+  html.theme-light #install-app-banner {
+    background-color: rgba(255, 255, 255, 0.96) !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.06) !important;
+  }
+  html.theme-light #install-app-banner h4 {
+    color: #0f172a !important;
+  }
+  html.theme-light #install-app-banner p {
+    color: #64748b !important;
+  }
+  html.theme-light #install-app-banner .bg-white\/5 {
+    background-color: #f1f5f9 !important;
+    border-color: #e2e8f0 !important;
+    color: #0f172a !important;
+  }
+}

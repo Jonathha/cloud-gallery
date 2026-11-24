@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Play, Volume2, VolumeX, Info, Share2, Trash2 } from 'lucide-react';
+import { Play, Volume2, VolumeX, Info, Share2 } from 'lucide-react';
+import TrashIcon from '../../icons/TrashIcon';
 import type { LightboxVideoPlayerProps } from '../LightboxVideoPlayer';
 import { LightboxVideoState } from './useLightboxVideoState';
 import { VideoActions } from './useVideoActions';
@@ -36,37 +37,34 @@ export function VideoPreviewBottomBar({ props, state, actions }: Props) {
           type="button"
           onClick={actions.toggleMute}
           className="absolute right-4 sm:right-6 p-2 bg-black/60 hover:bg-black/80 active:scale-95 border border-white/10 backdrop-blur-md rounded-full text-white shadow-lg transition-all cursor-pointer"
-          title={state.isMuted ? 'Desmutar' : 'Mutar'}
         >
           {state.isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
         </button>
       </motion.div>
 
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 20 }}
+        exit={{ opacity: 0, y: 15 }}
         transition={{ duration: 0.2 }}
-        className="w-full bg-black/90 border-t border-white/10 px-8 py-4 flex items-center justify-around backdrop-blur-md pointer-events-auto"
+        className="w-full px-8 py-4 pb-8 sm:pb-6 flex items-center justify-around pointer-events-auto"
       >
         <button
           id="video-btn-info"
           type="button"
           onClick={(e) => { e.stopPropagation(); props.onOpenDetails?.(); }}
-          className="p-2.5 text-white/80 hover:text-white rounded-full hover:bg-white/10 transition-all active:scale-90 cursor-pointer"
-          title="Detalhes do arquivo"
+          className="p-3 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)] hover:opacity-80 active:scale-90 transition-all cursor-pointer"
         >
-          <Info size={22} className="stroke-[1.8]" />
+          <Info size={24} className="stroke-[2]" />
         </button>
 
         <button
           id="video-btn-share"
           type="button"
           onClick={(e) => { e.stopPropagation(); props.setIsShareOpen(true); }}
-          className="p-2.5 text-white/80 hover:text-white rounded-full hover:bg-white/10 transition-all active:scale-90 cursor-pointer"
-          title="Compartilhar vídeo"
+          className="p-3 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)] hover:opacity-80 active:scale-90 transition-all cursor-pointer"
         >
-          <Share2 size={22} className="stroke-[1.8]" />
+          <Share2 size={24} className="stroke-[2]" />
         </button>
 
         {props.onDelete && (
@@ -74,10 +72,9 @@ export function VideoPreviewBottomBar({ props, state, actions }: Props) {
             id="video-btn-delete"
             type="button"
             onClick={(e) => { e.stopPropagation(); props.onDelete!(); }}
-            className="p-2.5 text-white/80 hover:text-red-400 rounded-full hover:bg-red-500/10 transition-all active:scale-90 cursor-pointer"
-            title="Excluir vídeo"
+            className="p-3 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)] hover:text-red-400 active:scale-90 transition-all cursor-pointer"
           >
-            <Trash2 size={22} className="stroke-[1.8]" />
+            <TrashIcon size={24} className="stroke-[2]" />
           </button>
         )}
       </motion.div>

@@ -26,7 +26,6 @@ export function VideoPlayerHeader({ props, state, actions }: Props) {
           type="button"
           onClick={actions.handleStopPlay}
           className="p-2 text-white/90 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition-all cursor-pointer"
-          title="Voltar ao início"
         >
           <ChevronLeft size={26} className="stroke-[2.2]" />
         </button>
@@ -47,7 +46,6 @@ export function VideoPlayerHeader({ props, state, actions }: Props) {
           type="button"
           onClick={actions.toggleFitMode}
           className="p-2 text-white/80 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition-all cursor-pointer"
-          title={state.fitMode === 'contain' ? 'Preencher tela' : 'Ajustar à tela'}
         >
           <Scan size={20} />
         </button>
@@ -57,7 +55,6 @@ export function VideoPlayerHeader({ props, state, actions }: Props) {
           type="button"
           onClick={actions.handleRotate}
           className="p-2 text-white/80 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition-all cursor-pointer"
-          title="Girar tela"
         >
           <RotateCw size={20} />
         </button>

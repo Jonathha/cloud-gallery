@@ -81,7 +81,7 @@ export function recordProbeAttempt(req: Request, reason: string) {
     }
   } else if (data.attempts > 8) {
     const attemptsSinceSolve = data.attempts - data.captchaSolvedAtAttempts;
-    const maxAllowed = (module === 'auth') ? 1 : 0;
+    const maxAllowed = (module === 'auth') ? 5 : 10;
     if (attemptsSinceSolve > maxAllowed) {
       data.captchaRequired = true;
     }

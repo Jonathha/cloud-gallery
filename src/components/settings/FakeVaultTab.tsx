@@ -1,6 +1,6 @@
 import React from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { dbPrimary } from '../../firebase';
+import { authPrimary } from '../../firebase';
+import { getMediaKeyApi } from '../../services/vaultApiService';
 import { deriveKey, decryptData } from '../../utils/crypto';
 import { getApiUrl } from '../../utils/apiUrl';
 import { motion } from 'framer-motion';
@@ -69,12 +69,17 @@ export default function FakeVaultTab({
       }
       try {
         setLoadingProtected(true);
-        const keyDoc = await getDoc(doc(dbPrimary, 'media_keys', securityImageId));
-        if (!keyDoc.exists()) {
+        const currentUser = authPrimary.currentUser;
+        if (!currentUser) {
           if (active) setProtectedImgUrl(null);
           return;
         }
-        const auxKey = keyDoc.data().auxKey;
+        const keyData = await getMediaKeyApi(currentUser, securityImageId);
+        if (!keyData || !keyData.auxKey) {
+          if (active) setProtectedImgUrl(null);
+          return;
+        }
+        const auxKey = keyData.auxKey;
         
         const salt = btoa(auxKey.slice(0, 16).padEnd(16, '0')); 
         const combinedKey = await deriveKey(extraPassword, salt);

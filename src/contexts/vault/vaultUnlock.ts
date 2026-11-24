@@ -1,12 +1,12 @@
 import { User } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { dbPrimary } from "../../firebase";
 import { deriveKey, decryptData } from "../../utils/crypto";
 import { unwrapVaultKey, wrapVaultKey } from "../../utils/fileCrypto";
 import { saveKeyToLocal } from "../../utils/db";
-import { signVaultData, verifyVaultDataIntegrity, checkActiveIntrusion } from "../../utils/integrity";
+import { signVaultData } from "../../utils/integrity";
 import { UnlockResult } from "../AuthContextTypes";
-import { getLockoutPenalty, registerFailedAttemptLogic, resetFailedAttemptsLogic } from "./vaultPenalty";
+import { registerFailedAttemptLogic, resetFailedAttemptsLogic } from "./vaultPenalty";
+import { fetchVaultConfigApi } from "../../services/vaultApiService";
+import { recordAuditEvent } from "../../services/adminAuditService";
 
 export async function unlockVaultLogic(
   pin: string,
@@ -14,201 +14,129 @@ export async function unlockVaultLogic(
   setCryptoKey: (key: CryptoKey | null) => void,
 ): Promise<UnlockResult> {
   try {
-    let data: any = null;
     let cachedData = localStorage.getItem(`vault_data_${user.uid}`);
+    let data: any = cachedData ? JSON.parse(cachedData) : null;
 
-    if (!cachedData) {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith("vault_data_")) {
-          const item = localStorage.getItem(key);
-          if (item) {
-            try {
-              const parsed = JSON.parse(item);
-              if (parsed.salt && parsed.verification) {
-                cachedData = item;
-                localStorage.setItem(`vault_data_${user.uid}`, item);
-                break;
-              }
-            } catch (e) {}
-          }
-        }
-      }
-    }
-
-    if (cachedData) {
-      data = JSON.parse(cachedData);
-      const isIntegrityValid = await verifyVaultDataIntegrity(
-        user.uid,
-        data.failedAttempts || 0,
-        data.lockedUntil || null,
-        data.integritySignature || null
-      );
-      if (!isIntegrityValid) {
-        if (checkActiveIntrusion()) {
-          console.warn("[INTEGRITY_SHIELD] Bypass detectado! Aplicando proteção máxima.");
-          data.failedAttempts = 7;
-          data.lockedUntil = Date.now() + getLockoutPenalty(7);
-          data.integritySignature = await signVaultData(user.uid, data.failedAttempts, data.lockedUntil);
-          localStorage.setItem(`vault_data_${user.uid}`, JSON.stringify(data));
-        } else {
-          console.log("[INTEGRITY_SHIELD] Sincronização de integridade necessária.");
-        }
-      }
-    } else {
-      let userDocExists = false;
-      let remoteData: any = null;
-
-      if (navigator.onLine) {
-        try {
-          const userDocPromise = getDoc(doc(dbPrimary, "users", user.uid));
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Timeout")), 1000),
-          );
-          const userDoc = (await Promise.race([
-            userDocPromise,
-            timeoutPromise,
-          ])) as any;
-          if (userDoc && userDoc.exists()) {
-            userDocExists = true;
-            remoteData = userDoc.data();
-          }
-        } catch (e) {
-          console.warn("Could not retrieve remote vault config:", e);
-        }
-      }
-
-      if (userDocExists && remoteData) {
-        data = remoteData;
-        const initialSig = await signVaultData(user.uid, data.failedAttempts || 0, data.lockedUntil || null);
-        localStorage.setItem(
-          `vault_data_${user.uid}`,
-          JSON.stringify({
-            salt: data.salt,
-            verification: data.verification,
-            encryptedVaultKey: data.encryptedVaultKey || null,
-            keyWrappingVersion: data.keyWrappingVersion || null,
-            encryptionMode: data.encryptionMode || (data.extraPassword ? 'custom_extra' : 'standard'),
-            extraPassword: data.extraPassword,
-            securityImageId: data.securityImageId,
-            extraPasswordUpdatedAt: data.extraPasswordUpdatedAt || 0,
-            securityImageIdUpdatedAt: data.securityImageIdUpdatedAt || 0,
-            failedAttempts: data.failedAttempts || 0,
-            lockedUntil: data.lockedUntil || null,
-            integritySignature: initialSig,
-          }),
-        );
-      }
-    }
-
-    // Sincronização Autoritativa do Firestore para Lockout (VL_VLT_01 Remediation)
-    if (navigator.onLine && user && user.uid && !user.uid.startsWith("offline_user")) {
+    // Se não houver dados locais e houver internet, sincroniza uma vez do D1
+    if (!data && navigator.onLine && user && user.uid && !user.uid.startsWith("offline_user")) {
       try {
-        const userDocPromise = getDoc(doc(dbPrimary, "users", user.uid));
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout")), 1500),
-        );
-        const userDoc = (await Promise.race([userDocPromise, timeoutPromise])) as any;
-        if (userDoc && userDoc.exists()) {
-          const remoteData = userDoc.data();
-          const remoteLockedUntil = remoteData.lockedUntil || null;
-          const remoteFailedAttempts = remoteData.failedAttempts || 0;
-          const now = Date.now();
-          const isRemoteLocked = remoteLockedUntil && now < remoteLockedUntil;
-
-          const localLockedUntil = data?.lockedUntil || null;
-          const localFailedAttempts = data?.failedAttempts || 0;
-
-          // Se o Firestore indicar que o usuário está bloqueado ou tiver contadores de falha superiores,
-          // o estado remoto prevalece obrigatoriamente sobre o cache local.
-          if (
-            isRemoteLocked ||
-            remoteFailedAttempts > localFailedAttempts ||
-            (remoteLockedUntil && (!localLockedUntil || remoteLockedUntil > localLockedUntil))
-          ) {
-            if (!data) data = remoteData;
-            data.failedAttempts = Math.max(localFailedAttempts, remoteFailedAttempts);
-            data.lockedUntil = isRemoteLocked
-              ? remoteLockedUntil
-              : (remoteLockedUntil && remoteLockedUntil > (localLockedUntil || 0) ? remoteLockedUntil : localLockedUntil);
-            data.integritySignature = await signVaultData(user.uid, data.failedAttempts, data.lockedUntil);
-            localStorage.setItem(`vault_data_${user.uid}`, JSON.stringify(data));
-          }
+        const remoteData = await fetchVaultConfigApi(user);
+        if (remoteData && remoteData.salt && remoteData.encryptedVaultKey) {
+          const initialSig = await signVaultData(user.uid, remoteData.failedAttempts || 0, remoteData.lockedUntil || null);
+          const syncedPayload = {
+            vaultVersion: remoteData.vaultVersion || 2,
+            salt: remoteData.salt,
+            encryptedVaultKey: remoteData.encryptedVaultKey,
+            keyWrappingVersion: remoteData.keyWrappingVersion || 1,
+            encryptionMode: remoteData.encryptionMode || (remoteData.extraPassword ? 'custom_extra' : 'standard'),
+            extraPassword: remoteData.extraPassword,
+            securityImageId: remoteData.securityImageId,
+            extraPasswordUpdatedAt: remoteData.extraPasswordUpdatedAt || 0,
+            securityImageIdUpdatedAt: remoteData.securityImageIdUpdatedAt || 0,
+            failedAttempts: remoteData.failedAttempts || 0,
+            lockedUntil: remoteData.lockedUntil || null,
+            integritySignature: initialSig,
+          };
+          localStorage.setItem(`vault_data_${user.uid}`, JSON.stringify(syncedPayload));
+          data = syncedPayload;
         }
-      } catch (e) {
-        console.warn("[LOCKOUT_SYNC] Erro na sincronização autoritativa remota de lockout:", e);
+      } catch (syncErr) {
+        console.warn("[UNLOCK_SYNC] Erro ao sincronizar configuração remota:", syncErr);
       }
     }
 
+    if (!data || !data.salt || !data.encryptedVaultKey) {
+      throw new Error("Configurações do cofre não encontradas localmente. Conecte-se à internet para sincronizar pela primeira vez.");
+    }
+
+    // 1. Verificação de lockout local
     const now = Date.now();
-    if (data && data.lockedUntil && now < data.lockedUntil) {
+    if (data.lockedUntil && now < data.lockedUntil) {
       return {
         success: false,
         lockedUntil: data.lockedUntil,
-        failedAttempts: data.failedAttempts,
+        failedAttempts: data.failedAttempts || 0,
       };
     }
 
-    let isCorrect = false;
-    if (data && data.salt && data.verification) {
-      try {
-        const pinKey = await deriveKey(pin, data.salt, true);
-        const check = await decryptData(
-          data.verification.ciphertext,
-          data.verification.iv,
-          pinKey,
-        );
-        if (check === "vault-check") {
-          isCorrect = true;
-          if (data.failedAttempts > 0) {
-            await resetFailedAttemptsLogic(user);
+    // 2. DESBLOQUEIO CRIPTOGRÁFICO LOCAL 100% OFFLINE
+    // Deriva a chave do PIN usando PBKDF2 e tenta desembrulhar a VMK com AES-GCM
+    try {
+      const pinKey = await deriveKey(pin, data.salt, true);
+      let vmk: CryptoKey;
+
+      if (data.encryptedVaultKey && data.encryptedVaultKey.ciphertext && data.encryptedVaultKey.iv) {
+        vmk = await unwrapVaultKey(data.encryptedVaultKey, pinKey);
+      } else {
+        // Fallback para cofre legado que não possuía encryptedVaultKey separado
+        if (data.verification) {
+          const check = await decryptData(data.verification.ciphertext, data.verification.iv, pinKey);
+          if (check !== "vault-check") {
+            throw new Error("PIN incorreto");
           }
-
-          let vmk: CryptoKey;
-          if (data.encryptedVaultKey && data.encryptedVaultKey.ciphertext && data.encryptedVaultKey.iv) {
-            try {
-              vmk = await unwrapVaultKey(data.encryptedVaultKey, pinKey);
-            } catch (unwrapErr) {
-              console.error("Falha ao desembrulhar encryptedVaultKey:", unwrapErr);
-              throw new Error("Falha ao recuperar a chave mestra do cofre");
-            }
-          } else {
-            // Caso B — usuário ainda não migrado (legado):
-            // O pinKey atual é a chave mestra original (VMK)
-            vmk = pinKey;
-
-            // Migração transparente e idempotente em segundo plano
-            try {
-              const wrapped = await wrapVaultKey(vmk, pinKey);
-              data.encryptedVaultKey = wrapped;
-              data.keyWrappingVersion = 1;
-              localStorage.setItem(`vault_data_${user.uid}`, JSON.stringify(data));
-              if (navigator.onLine) {
-                setDoc(
-                  doc(dbPrimary, "users", user.uid),
-                  {
-                    encryptedVaultKey: wrapped,
-                    keyWrappingVersion: 1,
-                  },
-                  { merge: true }
-                ).catch((migErr) => console.warn("Falha assíncrona ao migrar encryptedVaultKey no Firestore:", migErr));
-              }
-            } catch (migErr) {
-              console.warn("Falha ao criar encryptedVaultKey durante unlock legado:", migErr);
-            }
-          }
-
-          await saveKeyToLocal(user.uid, vmk);
-          setCryptoKey(vmk);
-          return { success: true };
         }
-      } catch (e) {
-        isCorrect = false;
+        vmk = pinKey;
+        const wrapped = await wrapVaultKey(vmk, pinKey);
+        data.encryptedVaultKey = wrapped;
+        localStorage.setItem(`vault_data_${user.uid}`, JSON.stringify(data));
       }
-    }
 
-    const { lockedUntil, failedAttempts } = await registerFailedAttemptLogic(user);
-    return { success: false, lockedUntil, failedAttempts };
+      // Desembrulhamento AES-GCM bem-sucedido: O PIN é válido!
+      await resetFailedAttemptsLogic(user);
+      await saveKeyToLocal(user.uid, vmk);
+      sessionStorage.setItem(`vault_active_salt_${user.uid}`, data.salt);
+      setCryptoKey(vmk);
+      recordAuditEvent({
+        type: 'vault_unlock',
+        action: 'vault_unlock',
+        userId: user.uid,
+        userEmail: user.email || undefined,
+        method: 'PIN (AES-GCM 256-bit)',
+        result: 'Cofre desbloqueado com sucesso',
+        status: 'success',
+        details: 'Cofre desbloqueado com sucesso via PIN'
+      }).catch(() => {});
+      return { success: true };
+    } catch (unwrapErr) {
+      // Se falhou no cache local mas o usuário está online, tenta sincronizar uma vez com a configuração canônica do servidor
+      // Isso previne que cache local corrompido ou de troca de senha em outro aparelho bloqueie a senha correta
+      if (navigator.onLine && user && user.uid && !user.uid.startsWith("offline_user")) {
+        try {
+          const freshRemote = await fetchVaultConfigApi(user);
+          if (
+            freshRemote &&
+            freshRemote.salt &&
+            freshRemote.encryptedVaultKey &&
+            (freshRemote.salt !== data.salt ||
+              JSON.stringify(freshRemote.encryptedVaultKey) !== JSON.stringify(data.encryptedVaultKey))
+          ) {
+            const freshPinKey = await deriveKey(pin, freshRemote.salt, true);
+            const freshVmk = await unwrapVaultKey(freshRemote.encryptedVaultKey, freshPinKey);
+            
+            // Senha bateu com os dados atualizados do servidor! Atualiza o cache local
+            data.salt = freshRemote.salt;
+            data.encryptedVaultKey = freshRemote.encryptedVaultKey;
+            data.vaultVersion = freshRemote.vaultVersion || 2;
+            data.failedAttempts = 0;
+            data.lockedUntil = null;
+            data.integritySignature = await signVaultData(user.uid, 0, null);
+            localStorage.setItem(`vault_data_${user.uid}`, JSON.stringify(data));
+
+            await resetFailedAttemptsLogic(user);
+            await saveKeyToLocal(user.uid, freshVmk);
+            sessionStorage.setItem(`vault_active_salt_${user.uid}`, data.salt);
+            setCryptoKey(freshVmk);
+            return { success: true };
+          }
+        } catch (resyncErr) {
+          // Senha realmente incorreta também no servidor
+        }
+      }
+
+      // Falha na tag de autenticação AES-GCM -> PIN incorreto
+      const { lockedUntil, failedAttempts } = await registerFailedAttemptLogic(user);
+      return { success: false, lockedUntil, failedAttempts };
+    }
   } catch (error) {
     console.warn("Error during unlockVaultLogic, registering failed attempt:", error);
     try {

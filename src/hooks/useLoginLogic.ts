@@ -73,6 +73,23 @@ export function useLoginLogic() {
     setError('');
     setMessage('');
 
+    const emailKey = email.toLowerCase().trim();
+    if (!emailKey) {
+      setError('Por favor, preencha o seu e-mail.');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailKey)) {
+      setError('Por favor, insira um endereço de e-mail válido.');
+      return;
+    }
+
+    if (!password) {
+      setError('Por favor, digite sua senha.');
+      return;
+    }
+
     if (isSignUp && !termsAccepted) {
       setError('Você deve aceitar os Termos de Uso e a Política de Privacidade para criar uma conta.');
       return;
@@ -88,8 +105,6 @@ export function useLoginLogic() {
         return;
       }
     }
-
-    const emailKey = email.toLowerCase().trim();
 
     try {
       if (isSignUp) {

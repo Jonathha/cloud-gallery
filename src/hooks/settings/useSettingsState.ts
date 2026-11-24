@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { ToastType } from '../../components/Toast';
-import { isNativeApp } from '../../utils/isNativeApp';
 
 export function useSettingsState(
   isOpen: boolean,
   extraPassword: string | null,
-  initialTab?: string
+  initialTab?: string,
+  onSubTabChange?: (tab: string) => void
 ) {
   const [autoLockTimer, setAutoLockTimer] = useState<string>('15');
   const [privacyMode, setPrivacyMode] = useState<boolean>(false);
@@ -23,32 +23,43 @@ export function useSettingsState(
 
   const allTabs = [
     { id: 'security', label: 'Segurança', icon: 'Shield', description: 'Privacidade e bloqueio automático' },
-    { id: 'decoyVault', label: 'Cofre Falso', icon: 'EyeOff', description: 'Configure um acesso local falso por PIN' },
-    { id: 'fakeVault', label: 'Imagem Protegida', icon: 'Lock', description: 'Oculte fotos com senha de segurança' },
-    { id: 'control', label: 'Controle', icon: 'Radio', description: 'Monitoramento e acesso remoto de aparelhos' },
+    { id: 'vaultCrypto', label: 'Criptografia do Cofre', icon: 'KeyRound', description: 'Senha mestre e nível de proteção' },
+    { id: 'quickAccess', label: 'Acesso Rápido', icon: 'Zap', description: 'Entrada direta sem digitar senha neste aparelho' },
+    { id: 'decoyVault', label: 'Cofre Falso', icon: 'VenetianMask', description: 'Configure um acesso local falso por PIN' },
     { id: 'storage', label: 'Armazenamento', icon: 'HardDrive', description: 'Cache e limpeza de dados' },
     { id: 'repair', label: 'Reparar Cofre', icon: 'Wrench', description: 'Corrigir erros de carregamento' },
-    { id: 'account', label: 'Conta', icon: 'User', description: 'Sua sessão e instalação' },
+    { id: 'account', label: 'Conta', icon: 'User', description: 'Sua sessão e credenciais de login' },
     { id: 'appearance', label: 'Aparência', icon: 'Palette', description: 'Tema visual do aplicativo' },
-    { id: 'installApp', label: 'Instalar App', icon: 'Download', description: 'Baixe a versão móvel oficial (.apk)' },
-    { id: 'about', label: 'Sobre', icon: 'Sparkles', description: 'Versão e informações do app' },
+    { id: 'about', label: 'Sobre', icon: 'Info', description: 'Versão e informações do app' },
   ] as const;
 
   const tabs = allTabs.filter(tab => {
     if (isFakeVaultActive) {
-      return tab.id !== 'decoyVault' && tab.id !== 'fakeVault' && tab.id !== 'control';
-    }
-    if (tab.id === 'installApp' && isNativeApp()) {
-      return false;
+      return tab.id !== 'decoyVault' && tab.id !== 'quickAccess' && tab.id !== 'vaultCrypto';
     }
     return true;
   });
 
-  const [activeTab, setActiveTab] = useState<typeof allTabs[number]['id'] | 'menu' | 'news'>((initialTab as any) || 'menu');
+  const [activeTab, setActiveTabState] = useState<typeof allTabs[number]['id'] | 'menu' | 'news'>(() => {
+    if (initialTab) return initialTab as any;
+    if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+      return 'security';
+    }
+    return 'menu';
+  });
+
+  const setActiveTab = (tab: any) => {
+    setActiveTabState(tab);
+    onSubTabChange?.(tab);
+  };
 
   useEffect(() => {
-    if (isOpen && initialTab) {
-      setActiveTab(initialTab as any);
+    if (isOpen) {
+      if (initialTab) {
+        setActiveTab(initialTab as any);
+      } else if (typeof window !== 'undefined' && window.innerWidth >= 768 && activeTab === 'menu') {
+        setActiveTab('security');
+      }
     }
   }, [isOpen, initialTab]);
 

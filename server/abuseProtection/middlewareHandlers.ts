@@ -88,7 +88,7 @@ export function handleAuthModuleAttempts(
 
   if (data.attempts > 8) {
     const attemptsSinceSolve = data.attempts - data.captchaSolvedAtAttempts;
-    const maxAllowed = 1;
+    const maxAllowed = 5;
     if (attemptsSinceSolve > maxAllowed) {
       data.captchaRequired = true;
       console.warn(`[SECURITY_AUDIT] [CAPTCHA_REQUIRED] Module="${module}" ID="${id}" Path="${req.path}" Attempts=${data.attempts}`);

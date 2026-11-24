@@ -58,7 +58,7 @@ export function ChangeSecurityPasswordForm({
             placeholder="Senha de segurança atual"
             value={currentExtraPassword}
             onChange={(e) => setCurrentExtraPassword(e.target.value)}
-            className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+            className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30"
           />
         </div>
       )}
@@ -79,7 +79,7 @@ export function ChangeSecurityPasswordForm({
           placeholder="Nova senha de segurança"
           value={newExtraPasswordState}
           onChange={(e) => setNewExtraPasswordState(e.target.value)}
-          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30"
         />
       </div>
 
@@ -99,7 +99,7 @@ export function ChangeSecurityPasswordForm({
           placeholder="Confirme a nova senha"
           value={confirmNewExtraPassword}
           onChange={(e) => setConfirmNewExtraPassword(e.target.value)}
-          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30"
         />
       </div>
 
@@ -107,7 +107,7 @@ export function ChangeSecurityPasswordForm({
         <button
           type="button"
           onClick={onCancel}
-          className="flex-1 py-2 px-4 bg-zinc-700/50 hover:bg-zinc-700 text-white font-medium rounded-xl transition-all"
+          className="flex-1 py-2 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium rounded-xl transition-all"
         >
           Cancelar
         </button>
@@ -115,7 +115,7 @@ export function ChangeSecurityPasswordForm({
           type="button"
           onClick={handleChangeExtraPassword as any}
           disabled={isUpdatingExtraPassword}
-          className="flex-1 py-2 px-4 bg-teal-500 hover:bg-teal-400 text-white font-medium rounded-xl transition-all disabled:opacity-50"
+          className="flex-1 py-2 px-4 bg-white hover:bg-zinc-200 text-black font-semibold rounded-xl transition-all disabled:opacity-50"
         >
           {isUpdatingExtraPassword ? 'Salvando...' : 'Salvar Senha'}
         </button>

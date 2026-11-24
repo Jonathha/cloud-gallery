@@ -1,4 +1,4 @@
-import { encryptData, decryptData, decryptDataRaw, deriveKey, generateSalt } from '../crypto';
+import { encryptData, encryptDataRaw, decryptData, decryptDataRaw, deriveKey, generateSalt } from '../crypto';
 import { deriveFileKeyFast, getOrDeriveCryptoKey } from './keyDerivation';
 
 export async function encryptWithFileKey(
@@ -22,6 +22,32 @@ export async function encryptWithFileKey(
   const encrypted = await encryptData(data, cryptoKey);
   return {
     ciphertext: encrypted.ciphertext,
+    iv: encrypted.iv,
+    fileSalt
+  };
+}
+
+export async function encryptWithFileKeyRaw(
+  data: string | Uint8Array,
+  fileKey: string,
+  providedSalt?: string
+): Promise<{ rawCiphertext: ArrayBuffer; iv: string; fileSalt: string }> {
+  let fileSalt = providedSalt;
+  if (!fileSalt) {
+    const baseSalt = await generateSalt();
+    fileSalt = "v2_" + baseSalt;
+  }
+  
+  let cryptoKey: CryptoKey;
+  if (fileSalt.startsWith("v2_")) {
+    cryptoKey = await deriveFileKeyFast(fileKey);
+  } else {
+    cryptoKey = await deriveKey(fileKey, fileSalt);
+  }
+  
+  const encrypted = await encryptDataRaw(data, cryptoKey);
+  return {
+    rawCiphertext: encrypted.rawCiphertext,
     iv: encrypted.iv,
     fileSalt
   };

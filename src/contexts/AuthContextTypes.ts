@@ -17,6 +17,7 @@ export interface UnlockResult {
 export interface AuthContextType {
   user: User | null;
   cryptoKey: CryptoKey | null;
+  setCryptoKey: (key: CryptoKey | null) => void;
   isAuthReady: boolean;
   needsSetup: boolean;
   authStatus: AuthStatus;
@@ -33,6 +34,7 @@ export interface AuthContextType {
   logOut: () => Promise<void>;
   setupVault: (pin: string, extraPassword?: string | null, mode?: 'standard' | 'custom_extra') => Promise<void>;
   unlockVault: (pin: string) => Promise<UnlockResult>;
+  unlockWithQuickAccess: () => Promise<UnlockResult>;
   lockVault: () => Promise<void>;
   registerFailedAttempt: () => Promise<{ lockedUntil: number | null, failedAttempts: number }>;
   resetFailedAttempts: () => Promise<void>;

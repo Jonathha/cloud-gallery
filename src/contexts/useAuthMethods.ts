@@ -9,7 +9,7 @@ import {
   User,
 } from "firebase/auth";
 import { authPrimary } from "../firebase";
-import { removeKeyFromLocal } from "../utils/db";
+import { removeKeyFromLocal, clearImageCache, clearTrash } from "../utils/db";
 
 import { recordAuditEvent } from "../services/adminAuditService";
 
@@ -50,7 +50,21 @@ export function useAuthMethods(user: User | null, setCryptoKey: (key: CryptoKey 
         userEmail: user.email || '',
         details: 'Logout de usuário realizado'
       });
-      await removeKeyFromLocal(user.uid);
+      try {
+        await removeKeyFromLocal(user.uid);
+      } catch (err) {
+        console.warn("[LOGOUT] Erro ao limpar chave local:", err);
+      }
+    }
+    try {
+      await clearImageCache();
+    } catch (err) {
+      console.warn("[LOGOUT] Erro ao limpar cache de imagens local:", err);
+    }
+    try {
+      await clearTrash();
+    } catch (err) {
+      console.warn("[LOGOUT] Erro ao limpar lixeira local:", err);
     }
     sessionStorage.removeItem('is_fake_vault_active');
     await signOut(authPrimary);

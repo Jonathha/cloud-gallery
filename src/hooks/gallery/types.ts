@@ -7,7 +7,7 @@ export interface UseGalleryLightboxProps {
   setSelectedImage: (img: string | null) => void;
   setSelectedImageId: (id: string | null) => void;
   setSelectedImageIsVideo: (isVideo: boolean) => void;
-  fetchFullMedia: (img: DecryptedImage, isPreload?: boolean) => Promise<void>;
+  fetchFullMedia: (img: DecryptedImage, isPreload?: boolean, priority?: number) => Promise<void>;
   securityImageId: string | null;
   extraPassword: string | null;
   resetFailedAttempts: () => Promise<void>;

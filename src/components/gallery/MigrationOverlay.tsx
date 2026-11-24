@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { packEncryptedFile } from '../../utils/fileCrypto';
-import { Database, ShieldCheck, CheckCircle2, AlertCircle, Loader2, X } from 'lucide-react';
+import { ShieldCheck, CheckCircle2, AlertCircle, Loader2, X, Lock } from 'lucide-react';
 import { removeImageFromCache } from '../../utils/db';
 import { getApiBaseUrl } from '../../utils/apiUrl';
-import { doc, setDoc } from 'firebase/firestore';
-import { dbPrimary } from '../../firebase';
+import { getSafeAuthToken } from '../../utils/safeAuthToken';
 
 interface MigrationOverlayProps {
   migrationItems: any[];
@@ -19,16 +18,22 @@ export default function MigrationOverlay({ migrationItems, onComplete }: Migrati
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
 
+  const count = migrationItems.length;
+  const isSingle = count === 1;
+
   const handleStartMigration = async () => {
     if (!user) return;
     try {
       setStatus('validating');
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 800));
       
       setStatus('uploading');
       let uploaded = 0;
       
-      const token = await user.getIdToken();
+      const token = await getSafeAuthToken(user);
+      if (!token) {
+        throw new Error('Sessão expirada. Faça login novamente.');
+      }
       
       for (const item of migrationItems) {
         const metadata = {
@@ -52,7 +57,6 @@ export default function MigrationOverlay({ migrationItems, onComplete }: Migrati
           validCiphertext = btoa("chunked_vault_data");
         }
         
-        // Remove whitespace, fix base64url and padding if needed
         validCiphertext = validCiphertext.replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/');
         while (validCiphertext.length % 4 !== 0) {
           validCiphertext += '=';
@@ -96,70 +100,19 @@ export default function MigrationOverlay({ migrationItems, onComplete }: Migrati
           throw new Error(errData.error || 'Erro na resposta do servidor de upload');
         }
 
-        const createdAt = item.createdAt || 0;
-        const uploadDate = new Date(createdAt);
-        const formattedDate = uploadDate.toLocaleDateString('pt-BR');
-        const formattedTime = uploadDate.toLocaleTimeString('pt-BR');
-        const isoUploadDate = uploadDate.toISOString();
-        const isVideo = item.contentType?.includes('video') || false;
-        const rawFileName = item.fileName || item.name || '';
-        const fileExt = rawFileName.includes('.')
-          ? rawFileName.split('.').pop()?.toUpperCase() || ''
-          : (isVideo ? 'WEBM' : 'JPG');
-        const finalFileName = rawFileName || `midia_${item.id}.${fileExt.toLowerCase()}`;
-        
-        try {
-          await setDoc(doc(dbPrimary, 'images', item.id), {
-            id: item.id,
-            userId: user.uid,
-            userEmail: user.email || '',
-            userName: user.displayName || user.email?.split('@')[0] || 'Anônimo',
-            imageUrl: `/api/storage/image/${item.id}`,
-            createdAt: createdAt,
-            uploadedAt: isoUploadDate,
-            timestamp: createdAt,
-            date: formattedDate,
-            time: formattedTime,
-            horario: `${formattedDate} às ${formattedTime}`,
-            fileName: finalFileName,
-            name: finalFileName,
-            size: item.size || item.totalSize || 0,
-            fileSize: item.fileSize || item.size || item.totalSize || 0,
-            width: item.width || 0,
-            height: item.height || 0,
-            format: fileExt || (isVideo ? 'WEBM' : 'JPG'),
-            formato: fileExt || (isVideo ? 'WEBM' : 'JPG'),
-            type: isVideo ? 'video' : 'image',
-            status: 'aprovada',
-            iv: item.iv || "",
-            contentType: item.contentType || (isVideo ? "video/webm" : "image/jpeg"),
-            totalSize: item.totalSize || item.size || 0,
-            isChunked: item.isChunked || false,
-            chunkCount: item.chunkCount || 1,
-            thumbnailCiphertext: item.thumbnailCiphertext || "",
-            thumbnailIv: item.thumbnailIv || "",
-            fileKeyCiphertext: item.fileKeyCiphertext || "",
-            fileKeyIv: item.fileKeyIv || "",
-            fileSalt: item.fileSalt || ""
-          });
-        } catch (fbErr) {
-          console.warn("Failed to save to firebase", fbErr);
-        }
-        
         uploaded++;
         setProgress(Math.round((uploaded / migrationItems.length) * 100));
       }
       
       setStatus('completed');
       
-      // Cleanup the local cache strictly since we just uploaded them. The loader will refetch from server and re-add them.
       for (const item of migrationItems) {
         await removeImageFromCache(item.id);
       }
 
       setTimeout(() => {
         onComplete();
-      }, 1500);
+      }, 1200);
       
     } catch (err: any) {
       setStatus('error');
@@ -168,80 +121,148 @@ export default function MigrationOverlay({ migrationItems, onComplete }: Migrati
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[200] bg-black/75 backdrop-blur-md flex items-center justify-center p-4 selection:bg-white/20">
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="bg-[#111111] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl relative overflow-hidden"
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+        className="bg-[#0f0f0f] border border-white/10 rounded-3xl p-6 sm:p-7 w-full max-w-md shadow-[0_24px_60px_-12px_rgba(0,0,0,0.85)] relative overflow-hidden"
       >
         {status === 'idle' && (
           <button
             onClick={() => onComplete(true)}
-            className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+            className="absolute top-5 right-5 p-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+            aria-label="Fechar"
           >
             <X className="w-5 h-5" />
           </button>
         )}
-        <div className="flex flex-col items-center text-center space-y-6">
 
-          
-          <div className="space-y-2">
-            <h2 className="text-xl font-medium text-white tracking-tight">Sincronização Segura Necessária</h2>
-            <p className="text-sm text-gray-400">
-              Detectamos {migrationItems.length} {migrationItems.length === 1 ? 'mídia' : 'mídias'} no seu dispositivo que precisam ser sincronizadas com o servidor.
+        <div className="flex flex-col items-center text-center space-y-5">
+          <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-zinc-100 shadow-inner">
+            <Lock className="w-6 h-6 stroke-[1.8]" />
+          </div>
+
+          <div className="space-y-1.5">
+            <h2 className="text-lg sm:text-xl font-semibold text-white tracking-tight">
+              Sincronização Segura Necessária
+            </h2>
+            <p className="text-xs sm:text-sm text-zinc-400 max-w-xs mx-auto leading-relaxed">
+              Detectamos {count} {isSingle ? 'mídia' : 'mídias'} no seu dispositivo que {isSingle ? 'precisa' : 'precisam'} ser sincronizadas com o servidor.
             </p>
           </div>
 
-          <div className="w-full bg-[#1A1A1A] rounded-xl p-4 border border-white/5 space-y-2 text-left">
-            <h3 className="text-sm font-medium text-white mb-1">Informações de Segurança</h3>
-            <ul className="text-xs text-gray-400 space-y-1.5">
-              <li><span className="text-gray-500">Criptografia:</span> <span className="text-gray-200">AES-GCM (256-bit)</span></li>
-              <li><span className="text-gray-500">Derivação de Chave:</span> <span className="text-gray-200">PBKDF2-HMAC-SHA256</span></li>
-              <li><span className="text-gray-500">Isolamento:</span> <span className="text-gray-200">Chave exclusiva por arquivo</span></li>
-              <li><span className="text-gray-500">Data da Operação:</span> <span className="text-gray-200">{new Date().toLocaleString('pt-BR')}</span></li>
-            </ul>
+          <div className="w-full bg-white/[0.02] rounded-2xl p-4 border border-white/[0.06] text-left space-y-2">
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldCheck className="w-4 h-4 text-zinc-300" />
+              <h3 className="text-xs font-semibold text-zinc-200 uppercase tracking-wider">
+                Informações de Segurança
+              </h3>
+            </div>
+            <div className="space-y-1.5 text-xs text-zinc-400">
+              <div className="flex justify-between items-center py-0.5 border-b border-white/[0.03]">
+                <span className="text-zinc-500">Criptografia:</span>
+                <span className="text-zinc-200 font-mono text-[11px]">AES-GCM (256-bit)</span>
+              </div>
+              <div className="flex justify-between items-center py-0.5 border-b border-white/[0.03]">
+                <span className="text-zinc-500">Derivação de Chave:</span>
+                <span className="text-zinc-200 font-mono text-[11px]">PBKDF2-HMAC-SHA256</span>
+              </div>
+              <div className="flex justify-between items-center py-0.5 border-b border-white/[0.03]">
+                <span className="text-zinc-500">Isolamento:</span>
+                <span className="text-zinc-200">Chave exclusiva por arquivo</span>
+              </div>
+              <div className="flex justify-between items-center py-0.5">
+                <span className="text-zinc-500">Data da Operação:</span>
+                <span className="text-zinc-300">{new Date().toLocaleString('pt-BR')}</span>
+              </div>
+            </div>
           </div>
 
-          <div className="w-full bg-[#1A1A1A] rounded-xl p-4 border border-white/5 space-y-3">
-            <div className="flex items-center text-sm">
-              {status === 'idle' ? <ShieldCheck className="w-4 h-4 text-zinc-100 mr-3" /> : (status === 'validating' ? <Loader2 className="w-4 h-4 text-zinc-100 animate-spin mr-3" /> : <CheckCircle2 className="w-4 h-4 text-gray-500 mr-3" />)}
-              <span className={status === 'validating' ? 'text-white' : 'text-gray-400'}>Validando {migrationItems.length} arquivos locais</span>
+          <div className="w-full bg-white/[0.02] rounded-2xl p-4 border border-white/[0.06] space-y-3">
+            <div className="flex items-center text-xs sm:text-sm text-left">
+              {status === 'idle' ? (
+                <ShieldCheck className="w-4 h-4 text-zinc-400 mr-2.5 shrink-0" />
+              ) : status === 'validating' ? (
+                <Loader2 className="w-4 h-4 text-white animate-spin mr-2.5 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 mr-2.5 shrink-0" />
+              )}
+              <span className={status === 'validating' ? 'text-white font-medium' : 'text-zinc-400'}>
+                Validando {count} {isSingle ? 'arquivo local' : 'arquivos locais'}
+              </span>
             </div>
-            <div className="flex items-center text-sm">
-              {status === 'uploading' ? <Loader2 className="w-4 h-4 text-zinc-100 animate-spin mr-3" /> : (status === 'completed' ? <CheckCircle2 className="w-4 h-4 text-gray-500 mr-3" /> : <CheckCircle2 className="w-4 h-4 text-[#333] mr-3" />)}
-              <span className={status === 'uploading' ? 'text-white' : (status === 'completed' ? 'text-gray-400' : 'text-gray-500')}>Enviando dados ({progress}%)</span>
+
+            <div className="flex items-center text-xs sm:text-sm text-left">
+              {status === 'uploading' ? (
+                <Loader2 className="w-4 h-4 text-white animate-spin mr-2.5 shrink-0" />
+              ) : status === 'completed' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 mr-2.5 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-zinc-600 mr-2.5 shrink-0" />
+              )}
+              <span className={status === 'uploading' ? 'text-white font-medium' : status === 'completed' ? 'text-zinc-300' : 'text-zinc-500'}>
+                Enviando dados ({progress}%)
+              </span>
             </div>
+
+            {status === 'uploading' && (
+              <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">
+                <motion.div 
+                  className="h-full bg-white rounded-full transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            )}
+
             {status === 'error' && (
-               <div className="flex items-center text-sm text-red-400 mt-2">
-                 <AlertCircle className="w-4 h-4 mr-3" />
-                 <span>{errorMsg}</span>
-               </div>
+              <div className="flex items-start text-xs sm:text-sm text-red-400 mt-2 bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl text-left">
+                <AlertCircle className="w-4 h-4 mr-2 shrink-0 mt-0.5" />
+                <span>{errorMsg}</span>
+              </div>
             )}
           </div>
 
           {status === 'idle' && (
-            <div className="w-full space-y-2">
+            <div className="w-full space-y-2 pt-1">
               <button 
                 onClick={handleStartMigration}
-                className="w-full h-12 bg-white text-black font-medium rounded-xl hover:bg-gray-100 transition-colors"
+                className="w-full h-11 sm:h-12 bg-white text-black font-semibold rounded-xl hover:bg-zinc-200 active:scale-[0.98] transition-all duration-200 shadow-md cursor-pointer text-sm"
               >
                 Iniciar Sincronização
               </button>
               <button 
                 onClick={() => onComplete(true)}
-                className="w-full h-12 bg-transparent text-gray-400 font-medium rounded-xl hover:text-white hover:bg-white/5 transition-colors"
+                className="w-full h-10 sm:h-11 bg-transparent text-zinc-400 font-medium rounded-xl hover:text-white hover:bg-white/5 active:scale-[0.98] transition-all duration-200 cursor-pointer text-sm"
               >
                 Cancelar
               </button>
             </div>
           )}
+
           {status === 'error' && (
-            <button 
-              onClick={handleStartMigration}
-              className="w-full h-12 bg-white text-black font-medium rounded-xl hover:bg-gray-100 transition-colors"
-            >
-              Tentar Novamente
-            </button>
+            <div className="w-full space-y-2 pt-1">
+              <button 
+                onClick={handleStartMigration}
+                className="w-full h-11 sm:h-12 bg-white text-black font-semibold rounded-xl hover:bg-zinc-200 active:scale-[0.98] transition-all duration-200 shadow-md cursor-pointer text-sm"
+              >
+                Tentar Novamente
+              </button>
+              <button 
+                onClick={() => onComplete(true)}
+                className="w-full h-10 sm:h-11 bg-transparent text-zinc-400 font-medium rounded-xl hover:text-white hover:bg-white/5 active:scale-[0.98] transition-all duration-200 cursor-pointer text-sm"
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
+
+          {status === 'completed' && (
+            <div className="py-2 text-emerald-400 text-sm font-medium flex items-center justify-center gap-2">
+              <CheckCircle2 className="w-5 h-5" />
+              <span>Sincronização concluída com sucesso!</span>
+            </div>
           )}
         </div>
       </motion.div>

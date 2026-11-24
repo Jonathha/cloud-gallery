@@ -2,13 +2,17 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useVaultCaptcha } from "./vaultUnlock/useVaultCaptcha";
 import { useVaultLockout } from "./vaultUnlock/useVaultLockout";
+import { isQuickAccessEnabled, isManuallyLocked } from "../utils/quickAccess";
 
 export function useVaultUnlockState() {
-  const { unlockVault, logOut, user } = useAuth();
+  const { unlockVault, unlockWithQuickAccess, logOut, user } = useAuth();
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [hasTriedAutoUnlock, setHasTriedAutoUnlock] = useState(false);
+
+  const isQuickAccess = Boolean(user && isQuickAccessEnabled(user.uid));
 
   const {
     showCaptcha,
@@ -28,6 +32,42 @@ export function useVaultUnlockState() {
     remainingTime,
     setRemainingTime
   } = useVaultLockout(user);
+
+  // Tentativa de desbloqueio instantâneo se Acesso Rápido estiver ativo e não tiver sido travado manualmente
+  useEffect(() => {
+    if (user && isQuickAccess && !isManuallyLocked(user.uid) && !lockedUntil && !hasTriedAutoUnlock) {
+      setHasTriedAutoUnlock(true);
+      setLoading(true);
+      unlockWithQuickAccess()
+        .then((res) => {
+          setLoading(false);
+          if (res.success) {
+            setFailedAttempts(0);
+          }
+        })
+        .catch(() => {
+          setLoading(false);
+        });
+    }
+  }, [user, isQuickAccess, lockedUntil, hasTriedAutoUnlock, unlockWithQuickAccess, setFailedAttempts]);
+
+  const handleQuickUnlock = async () => {
+    if (lockedUntil || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await unlockWithQuickAccess();
+      if (res.success) {
+        setFailedAttempts(0);
+      } else {
+        setError("Não foi possível acessar rapidamente. Digite a sua senha.");
+      }
+    } catch {
+      setError("Erro no acesso rápido. Digite sua senha.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     const handleTriggerCaptcha = () => {
@@ -88,6 +128,7 @@ export function useVaultUnlockState() {
           setPin("");
         } else {
           setError("Falha ao desbloquear o cofre. Verifique sua senha.");
+          setPin("");
         }
       } else {
         setLoading(false);
@@ -120,6 +161,8 @@ export function useVaultUnlockState() {
     handleSubmit,
     logOut,
     user,
+    isQuickAccess,
+    handleQuickUnlock,
     showCaptcha,
     setShowCaptcha,
     captchaVerified,

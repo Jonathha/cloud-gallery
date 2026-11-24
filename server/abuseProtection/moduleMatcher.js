@@ -17,11 +17,7 @@ export async function getModuleAndId(request) {
     authIdentifier = await hashToken(token);
   }
 
-  if (path.startsWith('/api/roulette')) {
-    return { module: 'roulette', id: authIdentifier, ip };
-  } else if (path.startsWith('/api/admin/roulette')) {
-    return { module: 'admin_roulette', id: authIdentifier, ip };
-  } else if (path.startsWith('/api/logs')) {
+  if (path.startsWith('/api/logs')) {
     return { module: 'logs', id: authIdentifier, ip };
   } else if (path.startsWith('/api/share/view') || path.startsWith('/api/share_view') || path.startsWith('/share')) {
     return { module: 'share_view', id: ip, ip };

@@ -1,11 +1,16 @@
 import React, { useState } from "react";
 import { KeyRound, ShieldAlert, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
-import { EmailAuthProvider, linkWithCredential } from "firebase/auth";
+import {
+  EmailAuthProvider,
+  GoogleAuthProvider,
+  linkWithCredential,
+  reauthenticateWithPopup,
+} from "firebase/auth";
 import { authPrimary } from "../../../firebase";
 
 interface LinkEmailPasswordFormSectionProps {
-  onLinkSuccess: () => void;
+  onLinkSuccess: () => void | Promise<void>;
   showToast: (message: string, type?: "success" | "error" | "info") => void;
 }
 
@@ -46,19 +51,45 @@ export function LinkEmailPasswordFormSection({
 
     setIsLoading(true);
     try {
+      // O popup precisa ser a primeira operação assíncrona para não ser bloqueado pelo navegador.
+      const googleProvider = new GoogleAuthProvider();
+      googleProvider.setCustomParameters({ prompt: "select_account" });
+      await reauthenticateWithPopup(activeUser, googleProvider);
+
       const credential = EmailAuthProvider.credential(userEmail, password);
       await linkWithCredential(activeUser, credential);
+      try {
+        await activeUser.reload();
+      } catch {}
       showToast("Acesso por e-mail e senha ativado com sucesso!", "success");
       setIsExpanding(false);
       setPassword("");
       setConfirmPassword("");
-      onLinkSuccess();
+      await onLinkSuccess();
     } catch (error: any) {
       console.error("[LinkEmailPassword] Erro ao vincular credenciais:", error);
-      if (error.code === "auth/email-already-in-use") {
+      if (
+        error.code === "auth/popup-closed-by-user" ||
+        error.code === "auth/cancelled-popup-request"
+      ) {
+        showToast("Autenticação com o Google cancelada. O acesso por senha não foi ativado.", "info");
+      } else if (error.code === "auth/popup-blocked") {
+        showToast("O navegador bloqueou a janela do Google. Permita pop-ups e tente novamente.", "error");
+      } else if (error.code === "auth/user-mismatch") {
+        showToast("Use a mesma conta Google que está conectada a esta conta.", "error");
+      } else if (error.code === "auth/network-request-failed") {
+        showToast("Falha de conexão. Verifique sua internet e tente novamente.", "error");
+      } else if (error.code === "auth/too-many-requests") {
+        showToast("Muitas tentativas. Tente novamente mais tarde.", "error");
+      } else if (error.code === "auth/email-already-in-use") {
         showToast("Este e-mail já está associado a outra conta.", "error");
+      } else if (error.code === "auth/requires-recent-login") {
+        showToast("Por segurança, faça login novamente antes de vincular uma nova senha.", "error");
+      } else if (error.code === "auth/provider-already-linked") {
+        showToast("O acesso por e-mail e senha já está vinculado a esta conta.", "info");
+        await onLinkSuccess();
       } else {
-        showToast(error.message || "Erro ao vincular e-mail e senha.", "error");
+        showToast("Erro ao vincular e-mail e senha. Tente novamente.", "error");
       }
     } finally {
       setIsLoading(false);

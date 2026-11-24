@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import { getDB } from "./firebaseAdmin";
 import { deleteFromR2, downloadFromR2 } from "./r2Client";
 import { SHARES_DIR } from "./shareHelpers";
+import { claimKeysFor } from "./shares/claimKeys";
 import { AuthenticatedRequest } from "./authMiddleware";
 import { getFirestoreDocREST, deleteFirestoreDocREST, deleteFirestoreDocWithPreconditionREST } from "./firestoreREST";
 
@@ -61,20 +62,18 @@ export async function deleteShare(req: AuthenticatedRequest, res: Response) {
       }
     }
 
-    // 2. Atomic Firestore cleanup: delete shares/{shareId} and conditionally delete active_shares/{authUid_imageId}
+    // 2-4. Release the claim slot(s) that point at this share, then remove local/R2 pointers.
+    const claimKeys = imageId ? claimKeysFor(authUid, imageId) : [];
     if (imageId) {
-      const deterministicKey = `${authUid}_${imageId}`;
       if (db) {
         try {
           await db.runTransaction(async (t: any) => {
-            const activeRef = db.collection('active_shares').doc(deterministicKey);
-            const activeSnap = await t.get(activeRef);
-            if (activeSnap.exists) {
-              const activeData = activeSnap.data();
-              if (activeData?.shareId === shareId || activeData?.id === shareId) {
-                t.delete(activeRef);
-              }
-            }
+            const refs = claimKeys.map((k) => db.collection('active_shares').doc(k));
+            const snaps = await Promise.all(refs.map((r: any) => t.get(r)));
+            snaps.forEach((snap: any, i: number) => {
+              const activeData = snap.exists ? snap.data() : null;
+              if (activeData?.shareId === shareId || activeData?.id === shareId) t.delete(refs[i]);
+            });
             t.delete(db.collection('shares').doc(shareId));
           });
         } catch (e) {
@@ -82,14 +81,16 @@ export async function deleteShare(req: AuthenticatedRequest, res: Response) {
         }
       } else if (idToken) {
         try {
-          const activeDoc = await getFirestoreDocREST('active_shares', deterministicKey, idToken);
-          if (activeDoc && (activeDoc.shareId === shareId || activeDoc.id === shareId)) {
-            if (activeDoc._updateTime) {
-              try {
-                await deleteFirestoreDocWithPreconditionREST('active_shares', deterministicKey, { updateTime: activeDoc._updateTime }, idToken);
-              } catch (pErr) {}
-            } else {
-              await deleteFirestoreDocREST('active_shares', deterministicKey, idToken);
+          for (const key of claimKeys) {
+            const activeDoc = await getFirestoreDocREST('active_shares', key, idToken);
+            if (activeDoc && (activeDoc.shareId === shareId || activeDoc.id === shareId)) {
+              if (activeDoc._updateTime) {
+                try {
+                  await deleteFirestoreDocWithPreconditionREST('active_shares', key, { updateTime: activeDoc._updateTime }, idToken);
+                } catch (pErr) {}
+              } else {
+                await deleteFirestoreDocREST('active_shares', key, idToken);
+              }
             }
           }
           await deleteFirestoreDocREST('shares', shareId, idToken);
@@ -108,29 +109,21 @@ export async function deleteShare(req: AuthenticatedRequest, res: Response) {
       }
     }
 
-    // 3. Local file cleanup
     try {
       await fs.unlink(filePath);
     } catch (e) {}
 
-    if (imageId) {
-      const activePointerPath = path.join(SHARES_DIR, `active_${authUid}_${imageId}.json`);
+    for (const key of claimKeys) {
+      const activePointerPath = path.join(SHARES_DIR, `active_${key}.json`);
       try {
-        const pointerContent = await fs.readFile(activePointerPath, 'utf-8');
-        const pointerData = JSON.parse(pointerContent);
-        if (pointerData?.shareId === shareId || pointerData?.id === shareId) {
-          await fs.unlink(activePointerPath);
-        }
+        const pointerData = JSON.parse(await fs.readFile(activePointerPath, 'utf-8'));
+        if (pointerData?.shareId === shareId || pointerData?.id === shareId) await fs.unlink(activePointerPath);
       } catch (e) {}
-
-      // 4. R2 conditional active pointer cleanup
       try {
-        const r2ActiveBuffer = await downloadFromR2(`active_shares/${authUid}_${imageId}.json`);
+        const r2ActiveBuffer = await downloadFromR2(`active_shares/${key}.json`);
         if (r2ActiveBuffer) {
           const r2ActiveData = JSON.parse(r2ActiveBuffer.toString('utf-8'));
-          if (r2ActiveData?.shareId === shareId || r2ActiveData?.id === shareId) {
-            await deleteFromR2(`active_shares/${authUid}_${imageId}.json`);
-          }
+          if (r2ActiveData?.shareId === shareId || r2ActiveData?.id === shareId) await deleteFromR2(`active_shares/${key}.json`);
         }
       } catch (e) {}
     }

@@ -6,6 +6,19 @@ export function validateCreatePayload(body) {
   return true;
 }
 
+/**
+ * Returns an error message when the option combination is not allowed, otherwise null.
+ * One-time view links can never allow downloads: the two options are mutually exclusive.
+ */
+export function validateShareOptions(options) {
+  if (options == null) return null;
+  if (typeof options !== "object" || Array.isArray(options)) return "Opções de compartilhamento inválidas.";
+  if (options.oneTimeView && options.allowDownload !== false) {
+    return "Visualização única não pode ser combinada com download permitido.";
+  }
+  return null;
+}
+
 export function buildShareData(body, userId, now) {
   const { id, imageId, ciphertext, iv, contentType, totalSize, isChunked, chunkCount, options } = body;
   return {
@@ -23,7 +36,7 @@ export function buildShareData(body, userId, now) {
       requirePassword: !!options?.requirePassword,
       encryptedShareKey: options?.encryptedShareKey || null,
       ivShareKey: options?.ivShareKey || null,
-      allowDownload: options?.allowDownload !== false,
+      allowDownload: !options?.oneTimeView && options?.allowDownload !== false,
       oneTimeView: !!options?.oneTimeView,
       expiresAt: options?.expiresAt ? Number(options.expiresAt) : null
     },

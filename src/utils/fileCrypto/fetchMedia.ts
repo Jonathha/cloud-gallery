@@ -41,7 +41,11 @@ export async function fetchAndUnpackThumbnail(id: string, token?: string): Promi
   }
   const res = await fetch(getApiUrl(`/api/storage/thumbnail/${id}`), { headers });
   if (!res.ok) {
-    throw new Error(`Erro ao buscar miniatura: ${res.status}`);
+    const err: any = new Error(`Erro ao buscar miniatura: ${res.status}`);
+    err.status = res.status;
+    const retryAfter = Number(res.headers.get("Retry-After"));
+    if (retryAfter > 0) err.retryAfter = retryAfter;
+    throw err;
   }
   const buffer = await res.arrayBuffer();
   if (buffer.byteLength >= 8) {

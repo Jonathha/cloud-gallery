@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Lock, ShieldCheck, CheckCircle2, AlertTriangle, KeyRound } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { ChangeSecurityPasswordForm } from "./ChangeSecurityPasswordForm";
 import { useAuth } from "../../../contexts/AuthContext";
 
@@ -52,15 +52,15 @@ export function SecurityPasswordFormSection({
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: 0.2 }}
-      className="bg-zinc-800/50 rounded-2xl overflow-hidden border border-white/5 mb-3 p-4 space-y-4"
+      transition={{ duration: 0.25 }}
+      className="bg-zinc-900/40 rounded-2xl overflow-hidden border border-white/10 p-4 sm:p-5 space-y-4"
     >
       <div className="flex items-center justify-between pb-2 border-b border-white/5">
         <div className="flex items-center gap-2">
-          <KeyRound size={18} className="text-teal-400" />
-          <h4 className="text-sm font-semibold text-white">Configuração de Criptografia do Cofre</h4>
+          <KeyRound size={17} className="text-blue-400" />
+          <h4 className="text-xs sm:text-sm font-semibold text-white">Configuração de Criptografia do Cofre</h4>
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-300 border border-teal-500/20">
+        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300 border border-blue-500/20 font-mono">
           {extraPassword ? "Proteção Dupla" : "Modo Padrão"}
         </span>
       </div>
@@ -84,7 +84,7 @@ export function SecurityPasswordFormSection({
               : 'bg-zinc-900/60 border-white/5 text-zinc-400 hover:border-white/20'
           }`}
         >
-          <ShieldCheck size={18} className={selectedMode === 'standard' ? 'text-emerald-400 shrink-0 mt-0.5' : 'text-zinc-500 shrink-0 mt-0.5'} />
+          <ShieldCheck size={18} className={selectedMode === 'standard' ? 'text-blue-400 shrink-0 mt-0.5' : 'text-zinc-500 shrink-0 mt-0.5'} />
           <div className="space-y-0.5">
             <div className="text-xs font-semibold text-white flex items-center gap-1">
               Modo Padrão
@@ -109,7 +109,7 @@ export function SecurityPasswordFormSection({
               : 'bg-zinc-900/60 border-white/5 text-zinc-400 hover:border-white/20'
           }`}
         >
-          <Lock size={18} className={selectedMode === 'custom_extra' ? 'text-teal-400 shrink-0 mt-0.5' : 'text-zinc-500 shrink-0 mt-0.5'} />
+          <Lock size={18} className={selectedMode === 'custom_extra' ? 'text-blue-400 shrink-0 mt-0.5' : 'text-zinc-500 shrink-0 mt-0.5'} />
           <div className="space-y-0.5">
             <div className="text-xs font-semibold text-white flex items-center gap-1">
               Proteção Dupla
@@ -129,7 +129,7 @@ export function SecurityPasswordFormSection({
       )}
 
       {successMsg && (
-        <p className="text-emerald-400 text-xs bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-xl text-center">
+        <p className="text-blue-400 text-xs bg-blue-500/10 border border-blue-500/20 p-2 rounded-xl text-center">
           {successMsg}
         </p>
       )}
@@ -160,7 +160,7 @@ export function SecurityPasswordFormSection({
           {!isChangingExtraPassword ? (
             <button
               onClick={() => setIsChangingExtraPassword(true)}
-              className="w-full py-2.5 px-4 bg-teal-500/20 hover:bg-teal-500/30 border border-teal-500/30 text-teal-200 font-medium text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-2.5 px-4 bg-white/10 hover:bg-white/15 border border-white/15 text-white font-medium text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <Lock size={16} />
               {extraPassword ? "Alterar Senha Extra Existente" : "Definir Senha Extra de Segurança"}

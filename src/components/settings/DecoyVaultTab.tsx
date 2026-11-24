@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { EyeOff, Key, ShieldAlert, Check, Trash2, ShieldCheck } from 'lucide-react';
+import { EyeOff, Key, ShieldAlert, Check, ShieldCheck } from 'lucide-react';
+import TrashIcon from '../icons/TrashIcon';
 import { motion } from 'motion/react';
 
 interface DecoyVaultTabProps {
@@ -51,7 +52,7 @@ export default function DecoyVaultTab({ showToast }: DecoyVaultTabProps) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-28 md:pb-8">
       <motion.div
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
@@ -78,7 +79,7 @@ export default function DecoyVaultTab({ showToast }: DecoyVaultTabProps) {
               onClick={handleRemove}
               className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-400 hover:text-red-300 transition-colors text-sm font-semibold cursor-pointer"
             >
-              <Trash2 size={16} />
+              <TrashIcon size={16} />
               Desativar Cofre Falso
             </button>
           </div>
@@ -91,25 +92,35 @@ export default function DecoyVaultTab({ showToast }: DecoyVaultTabProps) {
               </p>
             </div>
 
-            <div className="space-y-3">
-              <div>
+            <div className="space-y-3.5">
+              <div className="scroll-mt-24">
                 <label className="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wider">Novo PIN de Acesso Falso</label>
                 <input
                   type="password"
                   value={inputPin}
                   onChange={(e) => setInputPin(e.target.value)}
+                  onFocus={(e) => {
+                    setTimeout(() => {
+                      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 200);
+                  }}
                   placeholder="Mínimo 6 caracteres"
                   className="w-full bg-zinc-950 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-white/30 transition-colors"
                   maxLength={30}
                 />
               </div>
 
-              <div>
+              <div className="scroll-mt-24">
                 <label className="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase tracking-wider">Confirmar PIN Falso</label>
                 <input
                   type="password"
                   value={confirmPin}
                   onChange={(e) => setConfirmPin(e.target.value)}
+                  onFocus={(e) => {
+                    setTimeout(() => {
+                      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 200);
+                  }}
                   placeholder="Repita o PIN falso"
                   className="w-full bg-zinc-950 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-white/30 transition-colors"
                   maxLength={30}
@@ -117,13 +128,15 @@ export default function DecoyVaultTab({ showToast }: DecoyVaultTabProps) {
               </div>
             </div>
 
-            <button
-              type="submit"
-              className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-white text-black hover:bg-zinc-200 transition-all text-sm font-bold active:scale-[0.98] cursor-pointer"
-            >
-              <Check size={16} />
-              Configurar Cofre Falso
-            </button>
+            <div className="pt-2">
+              <button
+                type="submit"
+                className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-white text-black hover:bg-zinc-200 transition-all text-sm font-bold active:scale-[0.98] cursor-pointer"
+              >
+                <Check size={16} />
+                Configurar Cofre Falso
+              </button>
+            </div>
           </form>
         )}
       </motion.div>

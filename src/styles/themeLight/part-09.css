@@ -1,0 +1,48 @@
+@layer base {
+  /* Protected Gallery Unlock Screen */
+  html.theme-light .bg-gradient-to-b.from-zinc-900.to-\[\#121212\] {
+    background-image: linear-gradient(to bottom, #ffffff, #f8fafc) !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04) !important;
+  }
+
+  /* Scrollbars in Light mode */
+  html.theme-light * {
+    scrollbar-color: rgba(0, 0, 0, 0.15) transparent !important;
+  }
+  html.theme-light ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15) !important;
+  }
+  html.theme-light ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.25) !important;
+  }
+
+  /* Preserve Dark Theme for Lightbox and elements with .theme-preserve-dark */
+  html.theme-light #lightbox-backdrop,
+  html.theme-light .theme-preserve-dark,
+  html.theme-light #lightbox-backdrop * {
+    color-scheme: dark;
+  }
+
+  html.theme-light #lightbox-backdrop,
+  html.theme-light .theme-preserve-dark {
+    background-color: #000000 !important;
+    color: #ffffff !important;
+  }
+
+  html.theme-light #lightbox-backdrop .text-white,
+  html.theme-light .theme-preserve-dark .text-white {
+    color: #ffffff !important;
+  }
+
+  html.theme-light #lightbox-backdrop .text-zinc-400,
+  html.theme-light .theme-preserve-dark .text-zinc-400 {
+    color: #a1a1aa !important;
+  }
+
+  html.theme-light #lightbox-backdrop button.bg-white,
+  html.theme-light .theme-preserve-dark button.bg-white {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+}

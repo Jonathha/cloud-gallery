@@ -38,7 +38,13 @@ export default function PrivacyScreen() {
 
     document.body.appendChild(overlay);
 
-    const checkPrivacy = () => localStorage.getItem('privacyMode') === 'true';
+    const checkPrivacy = () => {
+      try {
+        return localStorage.getItem('privacyMode') === 'true';
+      } catch (e) {
+        return false;
+      }
+    };
 
     const handleHide = () => {
       // Só oculta se o modo estiver ativo e o cofre estiver destrancado

@@ -1,28 +1,45 @@
 import { isShareActive } from "./helpers.js";
 
 export async function saveShareR2(bucket, id, deterministicKey, shareData, verifiedUid, imageId) {
-  await bucket.put(`shares/${id}.json`, JSON.stringify({ ...shareData, status: 'active' }));
-  await bucket.put(`active_shares/${deterministicKey}.json`, JSON.stringify({
-    id,
-    shareId: id,
-    imageId,
-    userId: verifiedUid,
-    status: 'active',
-    options: shareData.options,
-    createdAt: shareData.createdAt,
-    firstViewedAt: null
-  }));
+  if (!bucket) return null;
+
+  // D1 is the authority for the active share. Keep only the per-share
+  // R2 object here; writing a shared active_shares pointer would race with
+  // concurrent creates because R2 and D1 cannot participate in one transaction.
+  const previousShareObj = await bucket.get(`shares/${id}.json`);
+  const previousShare = previousShareObj ? await previousShareObj.json() : null;
+
+  await bucket.put(
+    `shares/${id}.json`,
+    JSON.stringify({ ...shareData, status: "active" })
+  );
+
+  return { previousShare };
+}
+
+export async function rollbackShareR2(bucket, id, deterministicKey, previousState) {
+  if (!bucket || !previousState) return false;
+  try {
+    if (previousState.previousShare) {
+      await bucket.put(
+        `shares/${id}.json`,
+        JSON.stringify(previousState.previousShare)
+      );
+    } else {
+      await bucket.delete(`shares/${id}.json`);
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[rollbackShareR2] R2 rollback failed:", err);
+    return false;
+  }
 }
 
 export async function getShareR2(bucket, shareId) {
   if (!bucket) return null;
-  try {
-    const obj = await bucket.get(`shares/${shareId}.json`);
-    if (obj) return await obj.json();
-  } catch (err) {
-    console.warn("[getShareR2] Fetch error:", err);
-  }
-  return null;
+  const obj = await bucket.get(`shares/${shareId}.json`);
+  return obj ? await obj.json() : null;
 }
 
 export async function getActiveShareR2(bucket, deterministicKey) {
@@ -37,7 +54,7 @@ export async function getActiveShareR2(bucket, deterministicKey) {
 }
 
 export async function deleteShareR2(bucket, shareId, deterministicKey) {
-  if (!bucket) return;
+  if (!bucket) return true;
   try {
     await bucket.delete(`shares/${shareId}.json`);
     if (deterministicKey) {
@@ -49,7 +66,11 @@ export async function deleteShareR2(bucket, shareId, deterministicKey) {
         }
       }
     }
-  } catch {}
+    return true;
+  } catch (err) {
+    console.error("[deleteShareR2] R2 delete failed:", err);
+    return false;
+  }
 }
 
 export async function searchSharesFallbackR2(bucket, imageId, userId, now) {

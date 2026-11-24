@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { getTrashItems } from "../utils/db";
 import { ToastType } from "../components/Toast";
@@ -28,6 +28,19 @@ export function useTrashLogic(isOpen: boolean) {
     setToast({ message, type });
   };
 
+  // Libera os blob URLs criados na descriptografia ao fechar a lixeira
+  const imagesRef = useRef<TrashImage[]>([]);
+  imagesRef.current = images;
+  useEffect(() => {
+    return () => {
+      imagesRef.current.forEach((img) => {
+        if (img.url?.startsWith("blob:")) {
+          try { URL.revokeObjectURL(img.url); } catch {}
+        }
+      });
+    };
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       setIsExtraUnlocked(false);
@@ -35,13 +48,19 @@ export function useTrashLogic(isOpen: boolean) {
       setExtraPasswordInput("");
       setSelectedIds([]);
       loadTrashItems();
+
+      const handleTrashUpdated = () => {
+        loadTrashItems();
+      };
+      window.addEventListener("trash-updated", handleTrashUpdated);
+      return () => window.removeEventListener("trash-updated", handleTrashUpdated);
     }
   }, [isOpen]);
 
   const loadTrashItems = async () => {
     setLoading(true);
     try {
-      const items = await getTrashItems();
+      const items = await getTrashItems(user?.uid);
       const decryptedItems: TrashImage[] = [];
 
       for (const item of items) {
@@ -109,12 +128,26 @@ export function useTrashLogic(isOpen: boolean) {
     setIsConfirmEmptyOpen(true);
   };
 
+  const triggerDeleteMultiple = () => {
+    if (selectedIds.length === 0) return;
+    const hasProtected = images.some(
+      (img) => selectedIds.includes(img.id) && !!securityImageId && img.id === securityImageId
+    );
+    if (hasProtected && !isExtraUnlocked && extraPassword) {
+      setIsPromptingExtra("delete_multiple");
+      return;
+    }
+    setIsConfirmDeleteMultipleOpen(true);
+  };
+
   const handleExtraPasswordSubmit = (e?: any) => {
     e?.preventDefault();
     if (extraPasswordInput.trim() === extraPassword?.trim()) {
       setIsExtraUnlocked(true);
       if (isPromptingExtra === "empty_trash") {
         setIsConfirmEmptyOpen(true);
+      } else if (isPromptingExtra === "delete_multiple") {
+        setIsConfirmDeleteMultipleOpen(true);
       } else {
         const img = images.find((i) => i.id === isPromptingExtra);
         if (img) {
@@ -149,9 +182,11 @@ export function useTrashLogic(isOpen: boolean) {
     setToast,
     handleRestore: ops.handleRestore,
     handleRestoreMultiple: ops.handleRestoreMultiple,
+    handleRestoreAll: ops.handleRestoreAll,
     handleDeletePermanently: ops.handleDeletePermanently,
     handleDeleteMultiple: ops.handleDeleteMultiple,
     handleEmptyTrash: ops.handleEmptyTrash,
+    deleteProgress: ops.deleteProgress,
     extraPassword,
     securityImageId,
     extraPasswordInput,
@@ -162,6 +197,7 @@ export function useTrashLogic(isOpen: boolean) {
     setIsExtraUnlocked,
     handleSelectImage,
     triggerEmptyTrash,
+    triggerDeleteMultiple,
     handleExtraPasswordSubmit,
   };
 }

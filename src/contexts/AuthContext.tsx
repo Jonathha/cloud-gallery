@@ -12,6 +12,7 @@ import { useAndroidAuthBridge } from "./useAndroidAuthBridge";
 import { useAuthMethods } from "./useAuthMethods";
 import { clearSessionDecryptedCache } from "../hooks/gallery/galleryDecryptHelper";
 import { clearDerivedKeyCache, clearVideoObjectURLs, clearImageObjectURLs } from "../utils/fileCrypto";
+import { getQuickAccessKey, setManualLocked } from "../utils/quickAccess";
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -130,6 +131,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return realResult;
   };
 
+  const unlockWithQuickAccess = async () => {
+    if (!user) return { success: false };
+    try {
+      const key = await getQuickAccessKey(user.uid);
+      if (!key) {
+        return { success: false };
+      }
+      setCryptoKey(key);
+      setManualLocked(user.uid, false);
+      sessionStorage.removeItem('is_fake_vault_active');
+
+      const cachedData = localStorage.getItem(`vault_data_${user.uid}`);
+      if (cachedData) {
+        try {
+          const data = JSON.parse(cachedData);
+          await setOrDecryptExtraPassword(data.extraPassword, key);
+        } catch {}
+      }
+
+      await resetFailedAttempts();
+      return { success: true };
+    } catch (err) {
+      console.error('[AuthContext] Quick access unlock failed:', err);
+      return { success: false };
+    }
+  };
+
   const lockVault = async () => {
     sessionStorage.removeItem('is_fake_vault_active');
     return baseLockVault();
@@ -180,6 +208,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         cryptoKey,
+        setCryptoKey,
         isAuthReady,
         needsSetup,
         authStatus,
@@ -190,6 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logOut,
         setupVault,
         unlockVault,
+        unlockWithQuickAccess,
         lockVault,
         extraPassword,
         encryptionMode,

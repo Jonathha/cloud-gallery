@@ -30,13 +30,6 @@ export const KNOWLEDGE_BASE: KnowledgeArticle[] = [
     action: { type: "NAVIGATE_TAB", description: "Ir para o Chat Seguro", data: { tab: "chat" } }
   },
   {
-    id: "active_sessions",
-    keywords: ["sessoes", "sessões", "dispositivos", "aparelhos", "quem ta online", "outros celulares", "desconectar", "segurança conta", "controle"],
-    title: "Gerenciar Dispositivos e Sessões Ativas",
-    content: "No painel Controle de Sessões, é possível verificar todos os navegadores e dispositivos conectados à sua conta em tempo real e desconectá-los remotamente. Fica em Configurações > Controle.",
-    action: { type: "NAVIGATE_TAB", description: "Ir para Controle de Sessões", data: { tab: "settings-control" } }
-  },
-  {
     id: "storage_management",
     keywords: ["armazenamento", "memoria", "memória", "espaço", "espaco", "tamanho", "limpar cache", "gasto", "mb", "gb"],
     title: "Gerenciar Armazenamento e Limpar Cache",

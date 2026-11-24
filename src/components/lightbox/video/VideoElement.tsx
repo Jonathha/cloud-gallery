@@ -1,5 +1,6 @@
 import React from 'react';
 import { Loader2 } from 'lucide-react';
+import { motion } from 'motion/react';
 import type { LightboxVideoPlayerProps } from '../LightboxVideoPlayer';
 import { LightboxVideoState } from './useLightboxVideoState';
 
@@ -20,7 +21,12 @@ export function VideoElement({ props, state }: VideoElementProps) {
             maxHeight: state.rotation % 180 !== 0 ? '100vw' : '100vh',
           }}
         >
-          <video
+          <motion.video
+            layoutId={`gallery-media-${props.img.id}`}
+            transition={{
+              duration: 0.32,
+              ease: [0.2, 0, 0, 1],
+            }}
             ref={state.videoRef}
             src={props.src}
             poster={props.img.url}
@@ -51,9 +57,23 @@ export function VideoElement({ props, state }: VideoElementProps) {
           />
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center space-y-3">
-          <Loader2 className="w-10 h-10 text-zinc-500 animate-spin" />
-          <span className="text-zinc-400 text-sm">Carregando vídeo...</span>
+        <div className="relative w-full h-full flex flex-col items-center justify-center space-y-3">
+          {props.img.url && (
+            <motion.img
+              layoutId={`gallery-media-${props.img.id}`}
+              transition={{
+                duration: 0.32,
+                ease: [0.2, 0, 0, 1],
+              }}
+              src={props.img.url}
+              alt=""
+              className="absolute inset-0 w-full h-full object-contain"
+            />
+          )}
+          <div className="relative z-10 flex flex-col items-center justify-center space-y-3 bg-black/40 backdrop-blur-xs p-4 rounded-xl border border-white/10">
+            <Loader2 className="w-10 h-10 text-zinc-300 animate-spin" />
+            <span className="text-zinc-300 text-sm font-medium">Carregando vídeo...</span>
+          </div>
         </div>
       )}
 

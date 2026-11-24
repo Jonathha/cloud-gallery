@@ -1,0 +1,46 @@
+@layer base {
+  /* Light Theme (Clean iOS / macOS System Light Style) */
+  html.theme-light,
+  html.theme-light body {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+    color-scheme: light;
+  }
+
+  /* Core canvas backgrounds in Light mode */
+  html.theme-light .bg-black,
+  html.theme-light .bg-zinc-950,
+  html.theme-light .bg-\[\#000\],
+  html.theme-light .bg-\[\#000000\],
+  html.theme-light .bg-\[\#030303\],
+  html.theme-light .bg-\[\#050505\],
+  html.theme-light .bg-\[\#070709\],
+  html.theme-light .bg-\[\#080808\],
+  html.theme-light .bg-\[\#0a0a0a\],
+  html.theme-light .bg-\[\#0a0a0d\],
+  html.theme-light .bg-\[\#0b0b0e\],
+  html.theme-light .bg-\[\#121214\],
+  html.theme-light .bg-\[\#121212\] {
+    background-color: #f8fafc !important;
+  }
+
+  /* Translucent headers, toolbars, sidebars, bottom navs & sticky overlays */
+  html.theme-light .bg-\[\#050505\]\/95,
+  html.theme-light .bg-\[\#050505\]\/90,
+  html.theme-light .bg-\[\#050505\]\/80,
+  html.theme-light .bg-\[\#080808\]\/90,
+  html.theme-light .bg-\[\#0a0a0a\]\/90,
+  html.theme-light .bg-\[\#0a0a0d\]\/95,
+  html.theme-light .bg-\[\#0b0b0e\]\/95,
+  html.theme-light .bg-zinc-950\/95,
+  html.theme-light .bg-zinc-950\/90,
+  html.theme-light .bg-zinc-950\/80,
+  html.theme-light .bg-zinc-900\/95,
+  html.theme-light .bg-black\/95,
+  html.theme-light .bg-black\/90,
+  html.theme-light .bg-black\/85 {
+    background-color: rgba(255, 255, 255, 0.94) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+  }
+}

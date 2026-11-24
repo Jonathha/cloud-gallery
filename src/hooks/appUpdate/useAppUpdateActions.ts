@@ -7,74 +7,74 @@ export function useAppUpdateActions(
   setUpdateState: (s: UpdateState) => void,
   setProgress: (p: number) => void
 ) {
-  const triggerDirectDownload = (url: string = targetApkUrl, fileName: string = 'app.apk') => {
+  const triggerDirectDownload = (url: string = targetApkUrl, fileName: string = 'Guarly.apk') => {
     setUpdateState('installing');
     setProgress(100);
     const link = document.createElement('a');
     link.href = url;
     link.download = fileName;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setTimeout(() => {
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = url;
-      document.body.appendChild(iframe);
-      setTimeout(() => document.body.removeChild(iframe), 2000);
-    }, 300);
   };
 
   const startRealDownload = async () => {
     setUpdateState('downloading');
     setProgress(0);
     const downloadUrl = targetApkUrl;
-    const fileName = 'app.apk';
-    const xhr = new XMLHttpRequest();
-    const separator = downloadUrl.includes('?') ? '&' : '?';
-    
-    xhr.open('GET', `${downloadUrl}${separator}t=${Date.now()}`, true);
-    xhr.responseType = 'blob';
-    
-    xhr.onprogress = (event) => {
-      if (event.lengthComputable && event.total > 0) {
-        const percentComplete = Math.round((event.loaded / event.total) * 100);
-        setProgress(percentComplete);
-      }
-    };
-    
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        setProgress(100);
-        setUpdateState('installing');
-        const blob = xhr.response;
-        const blobUrl = URL.createObjectURL(blob);
-        
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        const win = window as any;
-        const completeMsg = { type: 'DOWNLOAD_COMPLETE', url: blobUrl };
-        if (win.ReactNativeWebView && typeof win.ReactNativeWebView.postMessage === 'function') {
-          win.ReactNativeWebView.postMessage(JSON.stringify(completeMsg));
+    const fileName = 'Guarly.apk';
+
+    try {
+      const xhr = new XMLHttpRequest();
+      const separator = downloadUrl.includes('?') ? '&' : '?';
+      
+      xhr.open('GET', `${downloadUrl}${separator}t=${Date.now()}`, true);
+      xhr.responseType = 'blob';
+      
+      xhr.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          const percentComplete = Math.round((event.loaded / event.total) * 100);
+          setProgress(percentComplete);
         }
-        if (win.GuarlyApp && typeof win.GuarlyApp.onDownloadComplete === 'function') {
-          win.GuarlyApp.onDownloadComplete(blobUrl);
+      };
+      
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setProgress(100);
+          setUpdateState('installing');
+          const blob = xhr.response;
+          const blobUrl = URL.createObjectURL(blob);
+          
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          const win = window as any;
+          const completeMsg = { type: 'DOWNLOAD_COMPLETE', url: blobUrl };
+          if (win.ReactNativeWebView && typeof win.ReactNativeWebView.postMessage === 'function') {
+            win.ReactNativeWebView.postMessage(JSON.stringify(completeMsg));
+          }
+          if (win.GuarlyApp && typeof win.GuarlyApp.onDownloadComplete === 'function') {
+            win.GuarlyApp.onDownloadComplete(blobUrl);
+          }
+        } else {
+          triggerDirectDownload(downloadUrl, fileName);
         }
-      } else {
+      };
+      
+      xhr.onerror = () => {
         triggerDirectDownload(downloadUrl, fileName);
-      }
-    };
-    
-    xhr.onerror = () => {
+      };
+      
+      xhr.send();
+    } catch (e) {
       triggerDirectDownload(downloadUrl, fileName);
-    };
-    
-    xhr.send();
+    }
   };
 
   const handleUpdate = async () => {

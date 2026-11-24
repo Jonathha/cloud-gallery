@@ -13,8 +13,6 @@ export async function recordWorkerProbeAttempt(request, env, reason) {
 
   // ISENÇÕES: Rotas regulares da aplicação retornando 401/403/404/500 não são probes
   if (
-    path.startsWith('/api/roulette') ||
-    path.startsWith('/api/admin/roulette') ||
     path.startsWith('/api/logs') ||
     path.startsWith('/api/version') ||
     path.startsWith('/api/storage') ||

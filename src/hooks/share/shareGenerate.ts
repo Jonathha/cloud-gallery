@@ -29,6 +29,7 @@ interface GenerateShareParams {
   setAllowDownload: (val: boolean) => void;
   setOneTimeView: (val: boolean) => void;
   setLinkDuration: (val: '1h' | 'permanent') => void;
+  onLimitReached?: (code?: string) => void;
 }
 
 export async function generateShareLogic(params: GenerateShareParams) {
@@ -54,12 +55,17 @@ export async function generateShareLogic(params: GenerateShareParams) {
     setRequirePassword,
     setAllowDownload,
     setOneTimeView,
-    setLinkDuration
+    setLinkDuration,
+    onLimitReached
   } = params;
 
   setError('');
-  if (existingShares.length > 0 || existingShare) {
-    setError('Já existe um link de compartilhamento ativo para esta mídia. Exclua o link existente para gerar um novo.');
+  // Cada mídia tem no máximo 1 link ativo; o limite por conta é validado pelo servidor.
+  if (existingShares.length > 0) return;
+
+  // Visualização única e download são mutuamente exclusivos (a UI já impede; isto é a trava final).
+  if (oneTimeView && allowDownload) {
+    setError('Visualização única não permite download. Desative uma das duas opções.');
     return;
   }
 
@@ -94,6 +100,10 @@ export async function generateShareLogic(params: GenerateShareParams) {
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
+      if (errorData.code === 'SHARE_LIMIT_REACHED' || errorData.code === 'MEDIA_ALREADY_SHARED') {
+        onLimitReached?.(errorData.code);
+        return;
+      }
       throw new Error(errorData.error || 'Falha ao registrar compartilhamento no servidor seguro.');
     }
     
@@ -118,9 +128,20 @@ export async function generateShareLogic(params: GenerateShareParams) {
 
     recordAuditEvent({
       type: 'share_create',
+      action: 'share_create',
       userId: activeUser.uid,
       userEmail: activeUser.email || '',
-      details: `Novo link de compartilhamento gerado para a mídia ID: ${imageId}`
+      mediaType: shareDocData.contentType,
+      fileSize: shareDocData.totalSize,
+      resourceId: shareId,
+      method: [
+        requirePassword ? 'Protegido por senha' : 'Sem senha',
+        oneTimeView ? 'Visualização única' : (allowDownload ? 'Download permitido' : 'Somente visualização'),
+        linkDuration === '1h' ? 'Expira em 1h' : 'Permanente'
+      ].join(' • '),
+      result: 'Link de compartilhamento público gerado com sucesso',
+      status: 'success',
+      details: `Novo link de compartilhamento (${shareId}) gerado para a mídia ID: ${imageId}`
     });
   } catch (err: any) {
     console.error(err);

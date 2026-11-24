@@ -1,7 +1,6 @@
 import { User } from "firebase/auth";
-import { doc, setDoc, runTransaction } from "firebase/firestore";
-import { dbPrimary } from "../../firebase";
 import { signVaultData, verifyVaultDataIntegrity, checkActiveIntrusion } from "../../utils/integrity";
+import { recordVaultPenaltyApi, resetVaultPenaltyApi } from "../../services/vaultApiService";
 
 export const getLockoutPenalty = (failedAttempts: number): number => {
   if (failedAttempts === 3) return 30 * 1000;
@@ -54,64 +53,35 @@ export async function registerFailedAttemptLogic(
 
   let failedAttempts = 0;
   let lockedUntil: number | null = null;
+  const isIntrusion = checkActiveIntrusion() || (!isIntegrityValid && (data.failedAttempts || 0) >= 3);
 
-  // Transação atômica no Firestore para evitar Lost Update / Race Condition sob falhas concorrentes
+  const baseFailed = Number(data.failedAttempts) || 0;
+  const targetFailedAttempts = isIntrusion ? Math.max(7, baseFailed + 1) : baseFailed + 1;
+
+  // Atomic penalty registration in official D1 database via authenticated Worker
   if (navigator.onLine && user && user.uid && !user.uid.startsWith("offline_user")) {
     try {
-      const userRef = doc(dbPrimary, "users", user.uid);
-      await runTransaction(dbPrimary, async (transaction) => {
-        const userDoc = await transaction.get(userRef);
-        let remoteFailedAttempts = 0;
-        let remoteLockedUntil: number | null = null;
-        if (userDoc.exists()) {
-          const rData = userDoc.data();
-          remoteFailedAttempts = rData.failedAttempts || 0;
-          remoteLockedUntil = rData.lockedUntil || null;
+      const remoteRes = await recordVaultPenaltyApi(user, isIntrusion);
+      if (remoteRes) {
+        if (typeof remoteRes.failedAttempts === "number" && remoteRes.failedAttempts > 0) {
+          failedAttempts = remoteRes.failedAttempts;
         }
-
-        const baseFailed = Math.max(data.failedAttempts || 0, remoteFailedAttempts);
-        let txFailed = baseFailed + 1;
-
-        if (checkActiveIntrusion()) {
-          txFailed = Math.max(7, txFailed);
-        } else if (!isIntegrityValid && txFailed < 3) {
-          // safe sync
-        } else if (!isIntegrityValid) {
-          txFailed = Math.max(txFailed, 7);
+        if (remoteRes.lockedUntil) {
+          lockedUntil = remoteRes.lockedUntil;
         }
-
-        const penalty = getLockoutPenalty(txFailed);
-        const now = Date.now();
-        let txLocked = penalty > 0 ? now + penalty : null;
-
-        if (remoteLockedUntil && now < remoteLockedUntil) {
-          txLocked = Math.max(txLocked || 0, remoteLockedUntil);
-        }
-
-        failedAttempts = txFailed;
-        lockedUntil = txLocked;
-
-        transaction.set(userRef, { failedAttempts: txFailed, lockedUntil: txLocked }, { merge: true });
-      });
+      }
     } catch (e) {
-      console.warn("[LOCKOUT_PENALTY] Erro em transação atômica remota:", e);
+      console.warn("[LOCKOUT_PENALTY] Erro ao registrar penalidade no D1:", e);
     }
   }
 
   if (!failedAttempts) {
-    const baseFailed = data.failedAttempts || 0;
-    failedAttempts = baseFailed + 1;
+    failedAttempts = targetFailedAttempts;
+  }
 
-    if (checkActiveIntrusion()) {
-      failedAttempts = Math.max(7, failedAttempts);
-    } else if (!isIntegrityValid && failedAttempts < 3) {
-      // safe sync
-    } else if (!isIntegrityValid) {
-      failedAttempts = Math.max(failedAttempts, 7);
-    }
-
+  const now = Date.now();
+  if ((!lockedUntil || lockedUntil <= now) && failedAttempts >= 3) {
     const penalty = getLockoutPenalty(failedAttempts);
-    const now = Date.now();
     lockedUntil = penalty > 0 ? now + penalty : null;
   }
 
@@ -121,7 +91,7 @@ export async function registerFailedAttemptLogic(
   data.integritySignature = await signVaultData(user.uid, failedAttempts, lockedUntil);
   localStorage.setItem(`vault_data_${user.uid}`, JSON.stringify(data));
 
-  // Sync all other vault_data_ keys in localStorage to prevent bypass via stale keys
+  // Sync all other vault_data_ keys in localStorage
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (key && key.startsWith("vault_data_")) {
@@ -143,27 +113,47 @@ export async function registerFailedAttemptLogic(
 }
 
 export async function resetFailedAttemptsLogic(user: User): Promise<void> {
-  let data;
+  let data: any = null;
   const cachedData = localStorage.getItem(`vault_data_${user.uid}`);
   if (cachedData) {
-    data = JSON.parse(cachedData);
-    if (data.failedAttempts > 0) {
-      data.failedAttempts = 0;
-      data.lockedUntil = null;
-      
-      data.integritySignature = await signVaultData(user.uid, 0, null);
-      localStorage.setItem(`vault_data_${user.uid}`, JSON.stringify(data));
+    try {
+      data = JSON.parse(cachedData);
+    } catch (e) {}
+  }
 
-      if (navigator.onLine && user && user.uid && !user.uid.startsWith("offline_user")) {
-        setDoc(
-          doc(dbPrimary, "users", user.uid),
-          {
-            failedAttempts: 0,
-            lockedUntil: null,
-          },
-          { merge: true },
-        ).catch((e) => console.warn("Error resetting failed attempts remote:", e));
-      }
+  if (!data) {
+    data = {};
+  }
+
+  data.failedAttempts = 0;
+  data.lockedUntil = null;
+  try {
+    data.integritySignature = await signVaultData(user.uid, 0, null);
+  } catch (e) {}
+  localStorage.setItem(`vault_data_${user.uid}`, JSON.stringify(data));
+
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith("vault_data_")) {
+      try {
+        const item = localStorage.getItem(key);
+        if (item) {
+          const parsed = JSON.parse(item);
+          parsed.failedAttempts = 0;
+          parsed.lockedUntil = null;
+          const kUid = key.replace("vault_data_", "");
+          parsed.integritySignature = await signVaultData(kUid, 0, null);
+          localStorage.setItem(key, JSON.stringify(parsed));
+        }
+      } catch (e) {}
+    }
+  }
+
+  if (navigator.onLine && user && user.uid && !user.uid.startsWith("offline_user")) {
+    try {
+      await resetVaultPenaltyApi(user);
+    } catch (e) {
+      console.warn("Error resetting failed attempts in D1:", e);
     }
   }
 }

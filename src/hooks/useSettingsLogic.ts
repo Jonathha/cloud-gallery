@@ -12,15 +12,16 @@ export function useSettingsLogic(
   images: DecryptedImage[],
   onClose: () => void,
   onOpenTrash?: () => void,
-  initialTab?: 'security' | 'fakeVault' | 'storage' | 'repair' | 'account' | 'appearance' | 'about' | 'menu' | 'news' | 'control' | 'decoyVault' | 'ai'
+  initialTab?: 'security' | 'vaultCrypto' | 'quickAccess' | 'storage' | 'repair' | 'account' | 'appearance' | 'about' | 'menu' | 'news' | 'decoyVault' | 'ai',
+  onSubTabChange?: (tab: string) => void
 ) {
   const { user, logOut, extraPassword, securityImageId, updateExtraPassword, setSecurityImage, cryptoKey } = useAuth();
   const { isInstallable, promptToInstall, isInIframe } = useInstallPrompt();
 
-  const state = useSettingsState(isOpen, extraPassword, initialTab);
+  const state = useSettingsState(isOpen, extraPassword, initialTab, onSubTabChange);
 
   const { handleRemoveFailedImages, handleClearCache } = useSettingsStorage(
-    isOpen, user, images, state.setStorageUsage, state.setCloudStorageUsed, state.setClearing, state.showToast
+    isOpen, user, images, state.setStorageUsage, state.setCloudStorageUsed, state.setClearing, state.showToast, state.activeTab === 'storage'
   );
 
   const { handleDownloadAll } = useSettingsBackup(

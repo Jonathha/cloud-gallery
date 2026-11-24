@@ -68,7 +68,9 @@ export async function buildSharePayload(params: BuildShareParams): Promise<Build
 
   const shareIdArray = new Uint8Array(16);
   crypto.getRandomValues(shareIdArray);
-  const shareId = Array.from(shareIdArray, b => b.toString(16).padStart(2, '0')).join('');
+  const shareIdHex = Array.from(shareIdArray, b => b.toString(16).padStart(2, '0')).join('');
+  // Formato com hífens (8-4-4-4-12), igual aos apps grandes; mantém os mesmos 128 bits aleatórios
+  const shareId = `${shareIdHex.slice(0, 8)}-${shareIdHex.slice(8, 12)}-${shareIdHex.slice(12, 16)}-${shareIdHex.slice(16, 20)}-${shareIdHex.slice(20)}`;
   const expiresAt = linkDuration === '1h' ? new Date(Date.now() + 3600000) : null;
 
   let optionsPayload: any = {

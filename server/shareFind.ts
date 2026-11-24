@@ -2,10 +2,11 @@ import { Response } from "express";
 import path from "path";
 import fs from "node:fs/promises";
 import { getDB } from "./firebaseAdmin";
-import { downloadFromR2, listKeysFromR2 } from "./r2Client";
+import { downloadFromR2 } from "./r2Client";
 import { SHARES_DIR, ensureSharesDir } from "./shareHelpers";
 import { AuthenticatedRequest } from "./authMiddleware";
 import { getFirestoreDocREST } from "./firestoreREST";
+import { claimKeysFor, MAX_SHARES_PER_MEDIA } from "./shares/claimKeys";
 
 export async function findExistingShare(req: AuthenticatedRequest, res: Response) {
   try {
@@ -52,75 +53,61 @@ export async function findExistingShare(req: AuthenticatedRequest, res: Response
     const checkAndAddShare = (data: any) => {
       if (!data || !data.id || data.imageId !== imageId) return;
       if (data.userId && data.userId !== authUid) return;
+      if (data.status === 'pending' || data.status === 'failed' || data.status === 'revoked') return;
       const isExpired = (data.options?.expiresAt && data.options.expiresAt <= now) ||
         (data.options?.oneTimeView && data.firstViewedAt && (now - data.firstViewedAt > 60000));
-      if (!isExpired) {
-        sharesMap.set(data.id, data);
-      }
+      if (!isExpired) sharesMap.set(data.id, data);
     };
 
-    // Search local folder
-    try {
-      const localFiles = await fs.readdir(SHARES_DIR);
-      for (const file of localFiles) {
-        if (file.endsWith('.json')) {
-          try {
-            const filePath = path.join(SHARES_DIR, file);
-            const content = await fs.readFile(filePath, 'utf-8');
-            const data = JSON.parse(content);
-            checkAndAddShare(data);
-          } catch (e) {
-            console.error('[ShareService] Parse error local file:', file, e);
-          }
-        }
-      }
-    } catch (e) {
-      await ensureSharesDir();
-    }
+    // Each active link owns a claim slot, so at most MAX_SHARES_PER_MEDIA lookups are needed
+    // (instead of scanning every local file and downloading every share object from R2).
+    const claims = await Promise.all(
+      claimKeysFor(authUid, imageId).map((key) => getFirestoreDocREST('active_shares', key, idToken).catch(() => null))
+    );
+    const claimedIds = Array.from(new Set(claims.map((c: any) => c?.shareId || c?.id).filter(Boolean))) as string[];
 
-    // Search Cloudflare R2
-    try {
-      const keys = await listKeysFromR2("shares/");
-      for (const key of keys) {
-        if (key.startsWith("shares/") && key.endsWith(".json")) {
-          const r2Buffer = await downloadFromR2(key);
-          if (r2Buffer) {
-            const r2Content = r2Buffer.toString('utf-8');
-            const parsed = JSON.parse(r2Content);
-            if (parsed.imageId === imageId) {
-              const filePath = path.join(SHARES_DIR, `${parsed.id}.json`);
-              await fs.writeFile(filePath, r2Content, 'utf-8');
-              checkAndAddShare(parsed);
-            }
-          }
+    const loadShareById = async (id: string) => {
+      if (!/^[a-zA-Z0-9_-]+$/.test(id)) return null;
+      try {
+        return JSON.parse(await fs.readFile(path.join(SHARES_DIR, `${id}.json`), 'utf-8'));
+      } catch {}
+      try {
+        const r2Buffer = await downloadFromR2(`shares/${id}.json`);
+        if (r2Buffer) {
+          const content = r2Buffer.toString('utf-8');
+          await fs.writeFile(path.join(SHARES_DIR, `${id}.json`), content, 'utf-8').catch(() => {});
+          return JSON.parse(content);
         }
-      }
-    } catch (r2Err) {
-      console.warn('[ShareService] R2 share search skipped:', r2Err);
-    }
+      } catch {}
+      try {
+        return await getFirestoreDocREST('shares', id, idToken);
+      } catch {}
+      return null;
+    };
+    (await Promise.all(claimedIds.map(loadShareById))).forEach(checkAndAddShare);
 
-    // Search Firestore
+    // Admin SDK query (indexed) also catches links created before claim slots existed.
     const db = getDB();
     if (db) {
       try {
-        const sharesRef = db.collection('shares');
-        const snapshot = await sharesRef.where('imageId', '==', imageId).get();
-        snapshot.docs.forEach(doc => {
-          const data = { id: doc.id, ...doc.data() };
-          checkAndAddShare(data);
-        });
+        const snapshot = await db.collection('shares').where('imageId', '==', imageId).get();
+        snapshot.docs.forEach(doc => checkAndAddShare({ id: doc.id, ...doc.data() }));
       } catch (fsErr) {
         console.warn('[ShareService] Firestore fallback failed:', fsErr);
       }
     }
 
-    const matchingShares = Array.from(sharesMap.values());
-    matchingShares.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    // The listing never needs the encrypted payload; omitting it keeps the response small.
+    const matchingShares = Array.from(sharesMap.values())
+      .map(({ ciphertext, iv, ...rest }: any) => rest)
+      .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
+      .slice(0, MAX_SHARES_PER_MEDIA);
 
     return res.json({
       success: true,
       shares: matchingShares,
-      share: matchingShares[0] || null
+      share: matchingShares[0] || null,
+      limit: MAX_SHARES_PER_MEDIA
     });
   } catch (err: any) {
     console.error('[ShareService] Error finding share:', err);

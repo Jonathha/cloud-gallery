@@ -1,242 +1,71 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { getImageFromCache, removeImageFromCache, saveToTrash } from '../../utils/db';
-import { deleteDoc, doc } from 'firebase/firestore';
-import { dbPrimary } from '../../firebase';
 import { DecryptedImage } from '../../types';
-import { fetchAndUnpackImage } from '../../utils/fileCrypto';
-import { getApiUrl } from '../../utils/apiUrl';
+import { useSelectionState } from './selection/useSelectionState';
+import { handleRangeOrToggleSelect } from './selection/selectionClickHandler';
+import { runBatchDelete } from './selection/batchDeleteRunner';
+import { recordAuditEvent } from '../../services/adminAuditService';
 
 export function useGallerySelection(
-  images: DecryptedImage[],
-  setImages: React.Dispatch<React.SetStateAction<DecryptedImage[]>>,
+  images: DecryptedImage[], setImages: React.Dispatch<React.SetStateAction<DecryptedImage[]>>,
   showToast: (msg: string, type?: 'success' | 'error') => void
 ) {
   const { user } = useAuth();
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
-  const [selectedForDeletion, setSelectedForDeletion] = useState<string[]>([]);
-  const [isDeletingMultiple, setIsDeletingMultiple] = useState(false);
-  const [isCleaningDuplicates, setIsCleaningDuplicates] = useState(false);
-  const [duplicatesToDelete, setDuplicatesToDelete] = useState<string[]>([]);
-  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+  const state = useSelectionState();
 
   const handleSelectionClick = (img: DecryptedImage, index: number, e: React.MouseEvent) => {
-    if (e?.shiftKey && lastSelectedIndex !== null) {
-      const start = Math.min(lastSelectedIndex, index);
-      const end = Math.max(lastSelectedIndex, index);
-      const rangeIds = images.slice(start, end + 1).map(i => i.id);
-      setSelectedForDeletion(prev => {
-        const newSet = new Set(prev);
-        rangeIds.forEach(id => newSet.add(id));
-        return Array.from(newSet);
-      });
-    } else {
-      setSelectedForDeletion(prev => 
-        prev.includes(img.id) ? prev.filter(id => id !== img.id) : [...prev, img.id]
-      );
-    }
-    setLastSelectedIndex(index);
+    handleRangeOrToggleSelect(img, index, e, images, state.lastSelectedIndex, state.setSelectedForDeletion, state.setLastSelectedIndex);
   };
-
   const handleDeleteMultiple = async () => {
-    setIsDeletingMultiple(false);
-    const ids = [...selectedForDeletion];
-    
-    // 1. OPTIMISTIC UPDATE: Clear state immediately
+    state.setIsDeletingMultiple(false);
+    const ids = [...state.selectedForDeletion];
+    const allItems = images.filter(img => ids.includes(img.id));
     setImages(prev => prev.filter(img => !ids.includes(img.id)));
-    setSelectedForDeletion([]);
-    setIsSelectionMode(false);
+    state.setSelectedForDeletion([]); state.setIsSelectionMode(false);
     showToast('Removendo mídias selecionadas...', 'success');
-
-    // 2. BACKGROUND CONCURRENT PROCESSING
-    (async () => {
-      try {
-        const deletePromises = ids.map(async (id) => {
-          try {
-            let cachedImage = await getImageFromCache(id);
-            let skipTrash = false;
-            if (!cachedImage || !cachedImage.ciphertext) {
-              try {
-                cachedImage = await fetchAndUnpackImage(id);
-              } catch (fetchErr) {
-                console.warn('Erro ao obter imagem para salvar na lixeira:', fetchErr);
-                skipTrash = true;
-              }
-            }
-
-            if (!skipTrash && cachedImage && cachedImage.ciphertext) {
-              await saveToTrash({
-                ...cachedImage,
-                createdAt: cachedImage.createdAt,
-                trashedAt: Date.now(),
-                deletedAt: Date.now()
-              });
-              await removeImageFromCache(id);
-              
-              if (user && navigator.onLine) {
-                try {
-                  await deleteDoc(doc(dbPrimary, 'images', id));
-                } catch (fsErr) {
-                  console.warn('Erro ao deletar imagem do Firestore:', fsErr);
-                }
-                try {
-                  const token = await user.getIdToken();
-                  await fetch(getApiUrl(`/api/storage/image/${id}`), {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                  });
-                } catch (serverErr) {
-                  console.warn('Erro ao deletar do servidor local:', serverErr);
-                }
-              }
-              return true;
-            } else {
-              await removeImageFromCache(id);
-              if (user && navigator.onLine) {
-                try {
-                  await deleteDoc(doc(dbPrimary, 'images', id));
-                } catch (fsErr) {
-                  console.warn('Erro ao deletar imagem do Firestore:', fsErr);
-                }
-                try {
-                  const token = await user.getIdToken();
-                  await fetch(getApiUrl(`/api/storage/image/${id}`), {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                  });
-                } catch (serverErr) {
-                  console.warn('Erro ao deletar do servidor local:', serverErr);
-                }
-              }
-              return false;
-            }
-          } catch (err) {
-            console.error(`Erro ao deletar item ${id}:`, err);
-            return false;
-          }
-        });
-
-        const results = await Promise.all(deletePromises);
-        const successCount = results.filter(Boolean).length;
-        if (successCount < ids.length) {
-          showToast(`${successCount} mídias movidas para a lixeira. ${ids.length - successCount} removidas diretamente sem dados originais.`, 'success');
-        } else {
-          showToast(`${successCount} mídias movidas para a lixeira!`);
-        }
-      } catch (error) {
-        console.error('Erro ao excluir imagens:', error);
-        showToast('Erro ao excluir imagens.', 'error');
-      }
-    })();
+    const { okIds } = await runBatchDelete(ids, user, 'mídias', showToast);
+    const selectedItems = allItems.filter(img => okIds.includes(img.id));
+    const totalSize = selectedItems.reduce((acc, item) => acc + (item.totalSize || 0), 0);
+    const types = Array.from(new Set(selectedItems.map(item => item.contentType || (item.isVideo ? 'video' : 'image')).filter(Boolean)));
+    const allOk = okIds.length === ids.length;
+    recordAuditEvent({
+      type: 'file_delete',
+      action: 'file_delete',
+      userId: user?.uid,
+      userEmail: user?.email || '',
+      itemCount: okIds.length,
+      fileSize: totalSize > 0 ? totalSize : undefined,
+      mediaType: types.length > 0 ? types.join(', ') : undefined,
+      resourceId: okIds.length > 0 ? okIds.slice(0, 5).join(', ') + (okIds.length > 5 ? ` (+${okIds.length - 5})` : '') : undefined,
+      result: allOk ? `${ids.length} mídia(s) enviada(s) para a lixeira em lote` : `${okIds.length}/${ids.length} mídia(s) enviada(s) para a lixeira em lote`,
+      status: allOk ? 'success' : 'error',
+      details: `Exclusão em lote: ${okIds.length} de ${ids.length} arquivo(s) movido(s) para a lixeira`
+    });
   };
-
   const handleCleanDuplicates = async () => {
-    setIsCleaningDuplicates(false);
-    const ids = [...duplicatesToDelete];
-    
-    // 1. OPTIMISTIC UPDATE: Clear state immediately
+    state.setIsCleaningDuplicates(false);
+    const ids = [...state.duplicatesToDelete];
+    const allItems = images.filter(img => ids.includes(img.id));
     setImages(prev => prev.filter(img => !ids.includes(img.id)));
-    setDuplicatesToDelete([]);
-    setIsSelectionMode(false);
+    state.setDuplicatesToDelete([]); state.setIsSelectionMode(false);
     showToast('Limpando duplicatas selecionadas...', 'success');
-
-    // 2. BACKGROUND CONCURRENT PROCESSING
-    (async () => {
-      try {
-        const deletePromises = ids.map(async (id) => {
-          try {
-            let cachedImage = await getImageFromCache(id);
-            let skipTrash = false;
-            if (!cachedImage || !cachedImage.ciphertext) {
-              try {
-                cachedImage = await fetchAndUnpackImage(id);
-              } catch (fetchErr) {
-                console.warn('Erro ao obter imagem para salvar na lixeira:', fetchErr);
-                skipTrash = true;
-              }
-            }
-
-            if (!skipTrash && cachedImage && cachedImage.ciphertext) {
-              await saveToTrash({
-                ...cachedImage,
-                createdAt: cachedImage.createdAt,
-                trashedAt: Date.now(),
-                deletedAt: Date.now()
-              });
-              await removeImageFromCache(id);
-              
-              if (user && navigator.onLine) {
-                try {
-                  await deleteDoc(doc(dbPrimary, 'images', id));
-                } catch (fsErr) {
-                  console.warn('Erro ao deletar imagem do Firestore:', fsErr);
-                }
-                try {
-                  const token = await user.getIdToken();
-                  await fetch(getApiUrl(`/api/storage/image/${id}`), {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                  });
-                } catch (serverErr) {
-                  console.warn('Erro ao deletar do servidor local:', serverErr);
-                }
-              }
-              return true;
-            } else {
-              await removeImageFromCache(id);
-              if (user && navigator.onLine) {
-                try {
-                  await deleteDoc(doc(dbPrimary, 'images', id));
-                } catch (fsErr) {
-                  console.warn('Erro ao deletar imagem do Firestore:', fsErr);
-                }
-                try {
-                  const token = await user.getIdToken();
-                  await fetch(getApiUrl(`/api/storage/image/${id}`), {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                  });
-                } catch (serverErr) {
-                  console.warn('Erro ao deletar do servidor local:', serverErr);
-                }
-              }
-              return false;
-            }
-          } catch (err) {
-            console.error(`Erro ao limpar duplicada ${id}:`, err);
-            return false;
-          }
-        });
-
-        const results = await Promise.all(deletePromises);
-        const successCount = results.filter(Boolean).length;
-        if (successCount < ids.length) {
-          showToast(`${successCount} duplicatas movidas para a lixeira. ${ids.length - successCount} removidas diretamente sem dados originais.`, 'success');
-        } else {
-          showToast(`${successCount} duplicatas movidas para a lixeira!`);
-        }
-      } catch (error) {
-        console.error('Erro ao limpar duplicatas:', error);
-        showToast('Erro ao limpar duplicatas.', 'error');
-      }
-    })();
+    const { okIds } = await runBatchDelete(ids, user, 'duplicatas', showToast);
+    const selectedItems = allItems.filter(img => okIds.includes(img.id));
+    const totalSize = selectedItems.reduce((acc, item) => acc + (item.totalSize || 0), 0);
+    const allOk = okIds.length === ids.length;
+    recordAuditEvent({
+      type: 'file_delete',
+      action: 'file_delete',
+      userId: user?.uid,
+      userEmail: user?.email || '',
+      itemCount: okIds.length,
+      fileSize: totalSize > 0 ? totalSize : undefined,
+      resourceId: okIds.length > 0 ? okIds.slice(0, 5).join(', ') + (okIds.length > 5 ? ` (+${okIds.length - 5})` : '') : undefined,
+      result: allOk ? `${ids.length} duplicata(s) movida(s) para a lixeira` : `${okIds.length}/${ids.length} duplicata(s) movida(s) para a lixeira`,
+      status: allOk ? 'success' : 'error',
+      details: `Limpeza de duplicatas: ${okIds.length} de ${ids.length} arquivo(s) movido(s) para a lixeira`
+    });
   };
 
-  return {
-    isSelectionMode,
-    setIsSelectionMode,
-    selectedForDeletion,
-    setSelectedForDeletion,
-    isDeletingMultiple,
-    setIsDeletingMultiple,
-    isCleaningDuplicates,
-    setIsCleaningDuplicates,
-    duplicatesToDelete,
-    setDuplicatesToDelete,
-    lastSelectedIndex,
-    setLastSelectedIndex,
-    handleSelectionClick,
-    handleDeleteMultiple,
-    handleCleanDuplicates,
-  };
+  return { ...state, handleSelectionClick, handleDeleteMultiple, handleCleanDuplicates };
 }

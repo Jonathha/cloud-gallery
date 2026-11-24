@@ -71,7 +71,7 @@ export function getDecryptionWorker(): Worker {
   return decryptionWorker;
 }
 
-export function decryptVideoWithWorker(options: DecryptWorkerOptions): Promise<{ decryptedBuffer: ArrayBuffer; metadata: any | null }> {
+export function decryptMediaWithWorker(options: DecryptWorkerOptions): Promise<{ decryptedBuffer: ArrayBuffer; metadata: any | null }> {
   return new Promise((resolve, reject) => {
     const worker = getDecryptionWorker();
     const messageId = Math.random().toString(36).slice(2);
@@ -107,3 +107,5 @@ export function decryptVideoWithWorker(options: DecryptWorkerOptions): Promise<{
     worker.postMessage({ id: messageId, ...options }, transferables);
   });
 }
+
+export const decryptVideoWithWorker = decryptMediaWithWorker;

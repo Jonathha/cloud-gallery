@@ -86,6 +86,7 @@ export async function getThumbnailById(req: AuthenticatedRequest, res: Response)
               id,
               contentType: "image/jpeg",
               iv: metadata.thumbnailIv || metadata.iv || "",
+              thumbnailIv: metadata.thumbnailIv || metadata.iv || "",
               fileSalt: metadata.fileSalt || ""
             });
             const thumbMetaBytes = Buffer.from(thumbMetaStr, 'utf-8');

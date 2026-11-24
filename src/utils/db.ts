@@ -1,4 +1,7 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
+import { removeThumbnailFromQuickAccessCache, clearQuickAccessCache } from './quickAccessCache';
+import { sessionDecryptedCache } from '../hooks/gallery/decrypt/sessionCache';
+import { revokeImageObjectURL, revokeVideoObjectURL } from './fileCrypto/objectUrls';
 
 interface VaultDB extends DBSchema {
   keys: {
@@ -9,6 +12,7 @@ interface VaultDB extends DBSchema {
     key: string; // image id
     value: {
       id: string;
+      userId?: string;
       ciphertext: string | Uint8Array | ArrayBuffer;
       iv: string;
       createdAt: any;
@@ -21,12 +25,15 @@ interface VaultDB extends DBSchema {
       fileKeyCiphertext?: string;
       fileKeyIv?: string;
       fileSalt?: string;
+      isLocalPending?: boolean;
+      isSyncPending?: boolean;
     };
   };
   trash: {
     key: string; // image id
     value: {
       id: string;
+      userId?: string;
       ciphertext: string | Uint8Array | ArrayBuffer;
       iv: string;
       createdAt: any;
@@ -45,6 +52,8 @@ interface VaultDB extends DBSchema {
       fileSalt?: string;
       isProtected?: boolean;
       auxKey?: string;
+      isLocalPending?: boolean;
+      isSyncPending?: boolean;
     };
   };
   protected_keys: {
@@ -113,6 +122,7 @@ export async function removeKeyFromLocal(uid: string) {
 // Image Cache Management
 export async function saveImageToCache(image: { 
   id: string; 
+  userId?: string;
   ciphertext: string | Uint8Array | ArrayBuffer; 
   iv: string; 
   createdAt: any; 
@@ -125,6 +135,8 @@ export async function saveImageToCache(image: {
   fileKeyCiphertext?: string;
   fileKeyIv?: string;
   fileSalt?: string;
+  isLocalPending?: boolean;
+  isSyncPending?: boolean;
 }) {
   return withDB(db => db.put('images', image));
 }
@@ -134,20 +146,30 @@ export async function getImageFromCache(id: string) {
 }
 
 export async function removeImageFromCache(id: string) {
+  removeThumbnailFromQuickAccessCache(id).catch(() => {});
+  try {
+    sessionDecryptedCache.delete(id);
+    revokeImageObjectURL(id);
+    revokeVideoObjectURL(id);
+  } catch {}
   return withDB(db => db.delete('images', id));
 }
 
 export async function clearImageCache() {
+  clearQuickAccessCache().catch(() => {});
   return withDB(db => db.clear('images'));
 }
 
-export async function getAllImagesFromCache() {
-  return withDB(db => db.getAll('images'));
+export async function getAllImagesFromCache(userId?: string) {
+  const images = await withDB(db => db.getAll('images'));
+  if (!userId) return images;
+  return images.filter(img => !img.userId || img.userId === userId);
 }
 
 // Trash Management
 export async function saveToTrash(item: { 
   id: string; 
+  userId?: string;
   ciphertext: string | Uint8Array | ArrayBuffer; 
   iv: string; 
   createdAt: any; 
@@ -170,12 +192,27 @@ export async function saveToTrash(item: {
   return withDB(db => db.put('trash', item));
 }
 
-export async function getTrashItems() {
-  return withDB(db => db.getAll('trash'));
+export async function getTrashItems(userId?: string) {
+  const items = await withDB(db => db.getAll('trash'));
+  if (!userId) return items;
+  return items.filter(item => !item.userId || item.userId === userId);
+}
+
+export async function getImageFromTrash(id: string) {
+  return withDB(db => db.get('trash', id));
 }
 
 export async function removeFromTrash(id: string) {
   return withDB(db => db.delete('trash', id));
+}
+
+export async function removeManyFromTrash(ids: string[]) {
+  if (ids.length === 0) return;
+  return withDB(async (db) => {
+    const tx = db.transaction('trash', 'readwrite');
+    await Promise.all(ids.map((id) => tx.store.delete(id)));
+    await tx.done;
+  });
 }
 
 export async function clearTrash() {

@@ -1,6 +1,6 @@
 import { jsonResponse } from "./workerHelpers.js";
-import { getFirestoreDocREST, setFirestoreDocREST } from "./workerFirestoreREST.js";
 import { hashVerificationCode } from "./workerAuthSend.js";
+import { getAuthVerificationD1, updateAuthVerificationAttemptsD1, deleteAuthVerificationD1 } from "./workerD1Auth.js";
 
 export async function handleVerifyCode(request, env) {
   let email, code;
@@ -17,22 +17,20 @@ export async function handleVerifyCode(request, env) {
   }
 
   const emailKey = email.toLowerCase().trim();
+  const db = env.DB || env.DATABASE || env.d1;
   let record = null;
-  try {
-    record = await getFirestoreDocREST('email_verifications', emailKey);
-  } catch (fsErr) {
-    console.warn("[AuthVerify] Error getting verification record:", fsErr.message);
+  if (db) {
+    record = await getAuthVerificationD1(db, emailKey);
   }
 
-  if (!record || !record.codeHash) {
+  if (!record || !record.code) {
     return jsonResponse({ success: false, error: "Nenhum código foi solicitado para este e-mail" });
   }
 
-  if (record.blockedUntil && Date.now() < record.blockedUntil) {
-    const remainingMinutes = Math.ceil((record.blockedUntil - Date.now()) / 60000);
+  if (record.attempts >= 5 && record.updatedAt && (Date.now() - record.updatedAt < 15 * 60 * 1000)) {
+    const remainingMinutes = Math.ceil((15 * 60 * 1000 - (Date.now() - record.updatedAt)) / 60000);
     return jsonResponse({
       success: false,
-      blockedUntil: record.blockedUntil,
       attempts: record.attempts || 0,
       error: `Este e-mail está bloqueado por excesso de tentativas. Tente novamente em ${remainingMinutes} minuto(s).`
     });
@@ -44,49 +42,35 @@ export async function handleVerifyCode(request, env) {
 
   const inputHash = await hashVerificationCode(emailKey, code);
 
-  if (record.codeHash !== inputHash) {
+  if (record.code !== inputHash) {
     const attempts = (record.attempts || 0) + 1;
-    let blockedUntil = null;
     let errorMsg = "Código de verificação incorreto.";
 
     if (attempts >= 5) {
-      blockedUntil = Date.now() + 15 * 60 * 1000;
       errorMsg = "Código de verificação incorreto. Seu e-mail foi bloqueado por 15 minutos.";
     } else if (attempts >= 3) {
       errorMsg = `Código incorreto. Você tem mais ${5 - attempts} tentativa(s) antes do bloqueio.`;
     }
 
-    try {
-      await setFirestoreDocREST('email_verifications', emailKey, {
-        email: emailKey,
-        codeHash: record.codeHash,
-        expiresAt: record.expiresAt,
-        attempts,
-        blockedUntil,
-        verified: false
-      });
-    } catch (saveErr) {
-      console.warn("[AuthVerify] Failed to update failed attempt in Firestore:", saveErr.message);
+    if (db) {
+      await updateAuthVerificationAttemptsD1(db, emailKey, attempts);
     }
 
-    return jsonResponse({ success: false, error: errorMsg, attempts, blockedUntil });
-  }
-
-  // Single-use code invalidation to prevent reuse
-  try {
-    await setFirestoreDocREST('email_verifications', emailKey, {
-      email: emailKey,
-      codeHash: null,
-      verified: true,
-      verifiedAt: Date.now(),
-      attempts: 0,
-      blockedUntil: null,
-      expiresAt: 0
+    return jsonResponse({
+      success: false,
+      attempts,
+      error: errorMsg
     });
-  } catch (invErr) {
-    console.warn("[AuthVerify] Failed to invalidate verification in Firestore:", invErr.message);
   }
 
-  return jsonResponse({ success: true });
-}
+  // Verification successful: remove temporary 2FA code
+  if (db) {
+    await deleteAuthVerificationD1(db, emailKey);
+  }
 
+  return jsonResponse({
+    success: true,
+    verified: true,
+    message: "E-mail verificado com sucesso!"
+  });
+}

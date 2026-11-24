@@ -54,14 +54,14 @@ export function ChangeAccountPasswordForm({
           placeholder="Senha atual"
           value={currentPassword}
           onChange={(e) => setCurrentPassword(e.target.value)}
-          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30"
         />
         <div className="text-right mt-1.5">
           <button
             type="button"
             onClick={handleSendResetEmail}
             disabled={isSendingEmail}
-            className="text-xs text-teal-400 hover:text-teal-300 transition-all focus:outline-none disabled:opacity-50"
+            className="text-xs text-zinc-400 hover:text-white transition-all focus:outline-none disabled:opacity-50"
           >
             {isSendingEmail ? 'Enviando link...' : 'Esqueceu a senha atual? Redefinir por e-mail'}
           </button>
@@ -81,7 +81,7 @@ export function ChangeAccountPasswordForm({
           placeholder="Nova senha"
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
-          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30"
         />
       </div>
       <div>
@@ -98,14 +98,14 @@ export function ChangeAccountPasswordForm({
           placeholder="Confirmar nova senha"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
-          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30"
         />
       </div>
       <div className="flex gap-2 pt-2">
         <button
           type="button"
           onClick={onCancel}
-          className="flex-1 py-2 px-4 bg-zinc-700/50 hover:bg-zinc-700 text-white font-medium rounded-xl transition-all"
+          className="flex-1 py-2 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium rounded-xl transition-all"
         >
           Cancelar
         </button>
@@ -113,7 +113,7 @@ export function ChangeAccountPasswordForm({
           type="button"
           onClick={handleChangePassword as any}
           disabled={isLoading}
-          className="flex-1 py-2 px-4 bg-teal-500 hover:bg-teal-400 text-white font-medium rounded-xl transition-all disabled:opacity-50"
+          className="flex-1 py-2 px-4 bg-white hover:bg-zinc-200 text-black font-semibold rounded-xl transition-all disabled:opacity-50"
         >
           {isLoading ? 'Salvando...' : 'Salvar Senha'}
         </button>

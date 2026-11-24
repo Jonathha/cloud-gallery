@@ -3,6 +3,7 @@ import crypto from "crypto";
 import fs from "node:fs/promises";
 import path from "path";
 import { IMAGES_DIR, checkMediaOwnership } from "./storageHelpers";
+import { parseAndValidateEncStructure } from "./storageHelpersEnc";
 import { uploadToR2 } from "./r2Client";
 import { processB2Backups } from "./b2BackupService";
 import { AuthenticatedRequest } from "./authMiddleware";
@@ -121,8 +122,19 @@ export async function uploadRawImage(req: AuthenticatedRequest, res: Response) {
 
     const contentType = metadata.contentType || "application/octet-stream";
 
+    const encValidation = parseAndValidateEncStructure(rawBuffer);
+    if (encValidation.isEnc && !encValidation.isValid) {
+      return res.status(400).json({ success: false, error: encValidation.error || "Arquivo .enc malformado ou corrompido" });
+    }
+
     let finalEncBuffer: Buffer;
-    if (rawBuffer.length >= 8 && rawBuffer[0] === 0x45 && rawBuffer[1] === 0x4e && rawBuffer[2] === 0x43) { // 'ENC'
+    if (encValidation.isEnc && encValidation.isValid) {
+      if (encValidation.metadata.id !== id) {
+        return res.status(400).json({ success: false, error: "Conflito: id nos metadados internos não corresponde ao identificador do recurso." });
+      }
+      if (encValidation.metadata.userId !== authUid) {
+        return res.status(403).json({ success: false, error: "Acesso negado: userId nos metadados internos não corresponde ao usuário autenticado." });
+      }
       finalEncBuffer = rawBuffer;
     } else {
       // Keep original file untransformed to preserve 100% exact pixels, metadata, and checksum

@@ -29,7 +29,7 @@ export function packEncryptedFile(metadata: any, ciphertextBase64: string): Arra
 export function packEncryptedFileV2(
   metadata: any,
   thumbnailCiphertextBase64: string,
-  ciphertextBase64: string
+  ciphertextBase64: string | Uint8Array | ArrayBuffer
 ): ArrayBuffer {
   const encoder = new TextEncoder();
 
@@ -42,12 +42,18 @@ export function packEncryptedFileV2(
     }
   }
 
-  let mediaBytes = new Uint8Array(0);
+  let mediaBytes: any = new Uint8Array(0);
   if (ciphertextBase64) {
-    const binaryStr = atob(ciphertextBase64);
-    mediaBytes = new Uint8Array(binaryStr.length);
-    for (let i = 0; i < binaryStr.length; i++) {
-      mediaBytes[i] = binaryStr.charCodeAt(i);
+    if (typeof ciphertextBase64 === 'string') {
+      const binaryStr = atob(ciphertextBase64);
+      mediaBytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        mediaBytes[i] = binaryStr.charCodeAt(i);
+      }
+    } else if (ciphertextBase64 instanceof Uint8Array) {
+      mediaBytes = ciphertextBase64;
+    } else if (ciphertextBase64 instanceof ArrayBuffer) {
+      mediaBytes = new Uint8Array(ciphertextBase64);
     }
   }
 

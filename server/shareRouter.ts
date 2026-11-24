@@ -1,3 +1,4 @@
+// LEGACY (Express + Firestore): caminho de desenvolvimento. A produção roda no Cloudflare Worker + D1 (server/workerShare, server/workerD1Shares). Ver README.md.
 import express from "express";
 import { findExistingShare, createShare, deleteShare, viewShare } from "./shareService";
 import { requireAuth } from "./authMiddleware";

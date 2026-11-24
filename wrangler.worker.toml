@@ -17,10 +17,19 @@ database_id = "6ee35aec-ac66-4fcb-ac12-4de74213d21c"
 
 [durable_objects]
 bindings = [
-  { name = "RATE_LIMITER", class_name = "RateLimiter" }
+  { name = "RATE_LIMITER", class_name = "RateLimiter" },
+  { name = "USER_SYNC", class_name = "UserSync" }
 ]
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RateLimiter"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["UserSync"]
+
+[triggers]
+crons = ["*/15 * * * *"]
+
 

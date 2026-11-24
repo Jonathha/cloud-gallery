@@ -1,0 +1,49 @@
+@layer base {
+  html.theme-light button.bg-white:not([class*="theme-preserve"]):not([class*="bg-emerald"]):not([class*="bg-red"]):not([class*="bg-amber"]):not([class*="bg-blue"]):not([class*="bg-violet"]):not([class*="bg-indigo"]):not([class*="bg-rose"]) * {
+    color: #ffffff !important;
+  }
+
+  html.theme-light span.bg-white.text-black,
+  html.theme-light a.bg-white.text-black {
+    background-color: #0f172a !important;
+    color: #ffffff !important;
+  }
+
+  html.theme-light button.bg-white:not([class*="theme-preserve"]):not([class*="bg-emerald"]):not([class*="bg-red"]):not([class*="bg-amber"]):not([class*="bg-blue"]):not([class*="bg-violet"]):not([class*="bg-indigo"]):not([class*="bg-rose"]):hover {
+    background-color: #1e293b !important;
+  }
+
+  /* Text gradients in Light mode */
+  html.theme-light .from-white {
+    --tw-gradient-from: #0f172a !important;
+  }
+  html.theme-light .via-white {
+    --tw-gradient-via: #0f172a !important;
+  }
+  html.theme-light .to-white\/40 {
+    --tw-gradient-to: #475569 !important;
+  }
+
+  /* Form inputs in Light mode */
+  html.theme-light input,
+  html.theme-light select,
+  html.theme-light textarea {
+    color: #0f172a !important;
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  html.theme-light select option {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  html.theme-light input.bg-black\/50,
+  html.theme-light input.bg-black\/40,
+  html.theme-light input.bg-zinc-900\/80,
+  html.theme-light input.bg-zinc-900 {
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+  }
+}

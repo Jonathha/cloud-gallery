@@ -18,7 +18,6 @@ export function VideoLockButton({ state, actions }: Props) {
         type="button"
         onClick={actions.unlockControls}
         className="bg-black/80 border border-white/20 text-white p-3 rounded-full shadow-2xl backdrop-blur-md active:scale-90 transition-all flex items-center gap-2 text-xs cursor-pointer"
-        title="Desbloquear tela"
       >
         <Unlock size={20} />
         <span>Desbloquear</span>

@@ -1,4 +1,4 @@
-export { handleListImages, handleListProtectedImages } from "./workerStorageList.js";
+export { handleListImages, handleListProtectedImages, handleUserVersion } from "./workerStorageList.js";
 export { handleUploadImage } from "./workerStorageUpload.js";
 export { handleUploadRawImage } from "./workerStorageUploadRaw.js";
 export { handleGetImage } from "./workerStorageGet.js";

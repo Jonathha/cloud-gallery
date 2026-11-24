@@ -1,50 +1,60 @@
-import React from "react";
-import { getTrashItems, removeFromTrash, saveImageToCache } from "../../../utils/db";
-import { TrashImage } from "../../gallery/trashDecryptHelper";
-import { getApiUrl } from "../../../utils/apiUrl";
+import { User } from 'firebase/auth';
+import { TrashImage } from '../../gallery/trashDecryptHelper';
+import { getApiUrl } from '../../../utils/apiUrl';
+import { removeFromTrash, saveImageToCache, getImageFromTrash } from '../../../utils/db';
+import { removePendingServerDelete } from '../../../utils/pendingServerDeletes';
+import { saveMediaKeyApi } from '../../../services/vaultApiService';
+
+// Restaurações simultâneas ao restaurar vários itens (cada uma reenvia o arquivo inteiro ao servidor)
+const RESTORE_CONCURRENCY = 4;
 
 interface UseTrashRestoreProps {
-  user: any;
-  setImages: React.Dispatch<React.SetStateAction<TrashImage[]>>;
+  user: User | null;
   selectedIds: string[];
-  setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>;
+  setImages: React.Dispatch<React.SetStateAction<TrashImage[]>>;
   setSelectedImage: (img: TrashImage | null) => void;
-  setIsRestoring: (val: boolean) => void;
-  showToast: (msg: string, type?: "success" | "error") => void;
+  setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>;
+  showToast: (msg: string, type?: 'success' | 'error') => void;
+  setIsRestoring: (restoring: boolean) => void;
   loadTrashItems?: () => Promise<void>;
 }
 
 export function useTrashRestore({
   user,
-  setImages,
   selectedIds,
-  setSelectedIds,
+  setImages,
   setSelectedImage,
-  setIsRestoring,
+  setSelectedIds,
   showToast,
+  setIsRestoring,
   loadTrashItems,
 }: UseTrashRestoreProps) {
+
   const restoreInternal = async (
     id: string,
-    setDocRef?: any,
-    docRef?: any,
-    serverTimestampRef?: any,
-    dbPrimaryRef?: any,
-    token?: string
+    token: string
   ) => {
-    if (!user) return;
-    const items = await getTrashItems();
-    const trashItem = items.find((i) => i.id === id);
+    if (!user) return false;
+    const trashItem = await getImageFromTrash(id);
+    if (!trashItem) return false;
 
-    if (!trashItem) throw new Error("Item not found in trash");
+    // Cancela exclusão pendente no servidor para não apagar a mídia que está sendo restaurada
+    removePendingServerDelete(user.uid, id);
+
+    // A galeria ignora ids de "apagados recentemente" (remoteMerge); sem remover aqui, a mídia restaurada some da tela
+    try {
+      const deletedList: string[] = JSON.parse(sessionStorage.getItem('recently_deleted_ids_v1') || '[]');
+      if (deletedList.includes(id)) {
+        sessionStorage.setItem('recently_deleted_ids_v1', JSON.stringify(deletedList.filter((x) => x !== id)));
+      }
+    } catch {}
 
     try {
-      const activeToken = token || (await user.getIdToken());
       await fetch(getApiUrl("/api/storage/upload"), {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${activeToken}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           id: trashItem.id,
@@ -64,7 +74,7 @@ export function useTrashRestore({
         }),
       });
     } catch (err) {
-      console.warn("Erro ao restaurar no servidor local:", err);
+      console.warn("Erro ao restaurar no servidor:", err);
     }
 
     await removeFromTrash(id);
@@ -76,23 +86,22 @@ export function useTrashRestore({
           await saveAuxKeyToCache(trashItem.id, trashItem.auxKey);
         } catch (_) {}
 
-        if (navigator.onLine && setDocRef && docRef && dbPrimaryRef) {
-          try {
-            await setDocRef(docRef(dbPrimaryRef, "media_keys", trashItem.id), {
-              auxKey: trashItem.auxKey,
-              userId: user.uid,
-              createdAt: trashItem.createdAt || (serverTimestampRef ? serverTimestampRef() : new Date()),
-              protectedAt: trashItem.protectedAt || (serverTimestampRef ? serverTimestampRef() : new Date()),
-              restoredAt: serverTimestampRef ? serverTimestampRef() : new Date(),
-            });
-          } catch (fsErr) {
-            console.warn("Erro ao restaurar chave auxiliar no Firestore:", fsErr);
-          }
+        try {
+          await saveMediaKeyApi(user, {
+            imageId: trashItem.id,
+            auxKey: trashItem.auxKey,
+            keyCiphertext: trashItem.auxKey,
+            isProtected: true,
+            createdAt: trashItem.createdAt || Date.now(),
+          });
+        } catch (keyErr) {
+          console.warn("Erro ao restaurar chave protegida no D1:", keyErr);
         }
       }
     } else {
       await saveImageToCache({
         id: trashItem.id,
+        userId: user.uid,
         ciphertext: trashItem.ciphertext,
         iv: trashItem.iv,
         createdAt: trashItem.createdAt,
@@ -106,55 +115,8 @@ export function useTrashRestore({
         fileKeyIv: trashItem.fileKeyIv,
         fileSalt: trashItem.fileSalt,
       });
-
-      if (navigator.onLine && setDocRef && docRef && dbPrimaryRef) {
-        try {
-          const rawCreatedAt = trashItem.createdAt;
-          const uploadDate = rawCreatedAt ? new Date(rawCreatedAt) : new Date();
-          const formattedDate = uploadDate.toLocaleDateString('pt-BR');
-          const formattedTime = uploadDate.toLocaleTimeString('pt-BR');
-          const isoUploadDate = uploadDate.toISOString();
-          const fallbackExt = trashItem.contentType ? trashItem.contentType.split('/')[1]?.toUpperCase() || 'JPEG' : 'JPEG';
-          
-          await setDocRef(docRef(dbPrimaryRef, 'images', trashItem.id), {
-            id: trashItem.id,
-            userId: user.uid,
-            userEmail: user.email || '',
-            userName: user.displayName || user.email?.split('@')[0] || 'Anônimo',
-            imageUrl: `/api/storage/image/${trashItem.id}`,
-            createdAt: trashItem.createdAt,
-            restoredAt: serverTimestampRef ? serverTimestampRef() : new Date(),
-            uploadedAt: isoUploadDate,
-            timestamp: trashItem.createdAt,
-            date: formattedDate,
-            time: formattedTime,
-            horario: `${formattedDate} às ${formattedTime}`,
-            fileName: `midia_${trashItem.id}.${fallbackExt.toLowerCase()}`,
-            name: `midia_${trashItem.id}.${fallbackExt.toLowerCase()}`,
-            size: trashItem.totalSize || 0,
-            fileSize: trashItem.totalSize || 0,
-            width: 0,
-            height: 0,
-            format: fallbackExt,
-            formato: fallbackExt,
-            type: trashItem.contentType?.startsWith('video') ? 'video' : 'image',
-            status: 'aprovada',
-            iv: trashItem.iv || "",
-            contentType: trashItem.contentType || "image/jpeg",
-            totalSize: trashItem.totalSize || 0,
-            isChunked: trashItem.isChunked || false,
-            chunkCount: trashItem.chunkCount || 1,
-            thumbnailCiphertext: trashItem.thumbnailCiphertext || "",
-            thumbnailIv: trashItem.thumbnailIv || "",
-            fileKeyCiphertext: trashItem.fileKeyCiphertext || "",
-            fileKeyIv: trashItem.fileKeyIv || "",
-            fileSalt: trashItem.fileSalt || ""
-          });
-        } catch (fsErr) {
-          console.warn('Erro ao restaurar metadados da imagem no Firestore:', fsErr);
-        }
-      }
     }
+    return true;
   };
 
   const handleRestore = async (image: TrashImage) => {
@@ -168,18 +130,13 @@ export function useTrashRestore({
     (async () => {
       setIsRestoring(true);
       try {
-        let setDocRef, docRef, serverTimestampRef, dbPrimaryRef;
-        if (navigator.onLine) {
-          const fs = await import("firebase/firestore");
-          setDocRef = fs.setDoc;
-          docRef = fs.doc;
-          serverTimestampRef = fs.serverTimestamp;
-          const { dbPrimary } = await import("../../../firebase");
-          dbPrimaryRef = dbPrimary;
-        }
-
         const token = await user.getIdToken();
-        await restoreInternal(image.id, setDocRef, docRef, serverTimestampRef, dbPrimaryRef, token);
+        const restored = await restoreInternal(image.id, token);
+        if (!restored) {
+          showToast("Item não encontrado na lixeira.", "error");
+          if (loadTrashItems) await loadTrashItems();
+          return;
+        }
         
         if (image.protectedAt) {
           window.dispatchEvent(new CustomEvent("refresh-protected-gallery"));
@@ -199,10 +156,9 @@ export function useTrashRestore({
     })();
   };
 
-  const handleRestoreMultiple = async () => {
-    if (!user || selectedIds.length === 0) return;
+  const restoreMany = async (idsToRestore: string[]) => {
+    if (!user || idsToRestore.length === 0) return;
     
-    const idsToRestore = [...selectedIds];
     const restoredSet = new Set(idsToRestore);
     
     setImages((prev) => prev.filter((img) => !restoredSet.has(img.id)));
@@ -212,31 +168,38 @@ export function useTrashRestore({
     (async () => {
       setIsRestoring(true);
       try {
-        let setDocRef, docRef, serverTimestampRef, dbPrimaryRef;
-        if (navigator.onLine) {
-          const fs = await import("firebase/firestore");
-          setDocRef = fs.setDoc;
-          docRef = fs.doc;
-          serverTimestampRef = fs.serverTimestamp;
-          const { dbPrimary } = await import("../../../firebase");
-          dbPrimaryRef = dbPrimary;
-        }
-
         const token = await user.getIdToken();
         
-        await Promise.all(
-          idsToRestore.map(async (id) => {
+        let restoredCount = 0;
+        const queue = [...idsToRestore];
+        const worker = async () => {
+          for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
             try {
-              await restoreInternal(id, setDocRef, docRef, serverTimestampRef, dbPrimaryRef, token);
+              const ok = await restoreInternal(id, token);
+              if (ok) restoredCount++;
             } catch (e) {
               console.error(`Failed to restore ${id}`, e);
             }
-          })
-        );
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(RESTORE_CONCURRENCY, queue.length) }, worker));
+
+        if (restoredCount === 0) {
+          showToast("Nenhum item pôde ser restaurado.", "error");
+          if (loadTrashItems) await loadTrashItems();
+          return;
+        }
 
         window.dispatchEvent(new CustomEvent("refresh-gallery-list"));
         window.dispatchEvent(new CustomEvent("refresh-protected-gallery"));
-        showToast(`${restoredSet.size} itens restaurados com sucesso!`, "success");
+        showToast(
+          restoredCount === idsToRestore.length
+            ? `${restoredCount} itens restaurados com sucesso!`
+            : `${restoredCount} de ${idsToRestore.length} itens restaurados.`,
+          restoredCount === idsToRestore.length ? "success" : "error"
+        );
+        // Parcial: o que falhou foi tirado da tela de forma otimista; recarrega para mostrar o que sobrou na lixeira
+        if (restoredCount < idsToRestore.length && loadTrashItems) await loadTrashItems();
       } catch (error) {
         console.error("Error restoring items:", error);
         showToast("Erro ao restaurar itens.", "error");
@@ -249,5 +212,8 @@ export function useTrashRestore({
     })();
   };
 
-  return { handleRestore, handleRestoreMultiple };
+  const handleRestoreMultiple = () => restoreMany([...selectedIds]);
+  const handleRestoreAll = (ids: string[]) => restoreMany([...ids]);
+
+  return { handleRestore, handleRestoreMultiple, handleRestoreAll };
 }

@@ -26,7 +26,7 @@ export function useVideoEffects(state: LightboxVideoState, props: LightboxVideoP
         .then(() => state.setIsPlaying(true))
         .catch((err) => console.warn('Muted preview autoplay blocked:', err));
     }
-  }, [props.isCurrent, state.hasStartedPlaying, props.setIsPlaybackActive, state.controlsTimeoutRef, state.videoRef, state.setIsPlaying, state.setHasStartedPlaying]);
+  }, [props.isCurrent, props.src, state.hasStartedPlaying, props.setIsPlaybackActive, state.controlsTimeoutRef, state.videoRef, state.setIsPlaying, state.setHasStartedPlaying]);
 
   const enterFullscreen = useCallback(() => {
     try {

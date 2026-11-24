@@ -3,7 +3,7 @@ import path from "path";
 import fs from "node:fs/promises";
 import { getDB } from "./firebaseAdmin";
 import { uploadToR2 } from "./r2Client";
-import { SHARES_DIR, checkImageExists } from "./shareHelpers";
+import { SHARES_DIR, checkImageExists, getClientIp } from "./shareHelpers";
 import { loadShareData, handleOrphanOrExpiredShare } from "./shareLoadHelpers";
 
 interface RateLimitRecord {
@@ -12,12 +12,62 @@ interface RateLimitRecord {
 }
 
 const shareRateLimitMap = new Map<string, RateLimitRecord>();
+// shareId -> (clientIp -> last access timestamp) inside the high-demand window
+const shareAccessTimestamps = new Map<string, Map<string, number>>();
+
+const HIGH_DEMAND_WINDOW_MS = 120000;
+const HIGH_DEMAND_MAX_VIEWERS = 3;
+const MAX_TRACKED_KEYS = 20000;
+
+function capMap(map: Map<string, unknown>) {
+  while (map.size > MAX_TRACKED_KEYS) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+}
+
+// Drops expired entries so random/nonexistent share IDs cannot grow the maps forever.
+function sweepShareTrackers() {
+  const now = Date.now();
+  for (const [key, rec] of shareRateLimitMap) {
+    if (now > rec.resetTime) shareRateLimitMap.delete(key);
+  }
+  for (const [shareId, viewers] of shareAccessTimestamps) {
+    for (const [ip, t] of viewers) {
+      if (t <= now - HIGH_DEMAND_WINDOW_MS) viewers.delete(ip);
+    }
+    if (viewers.size === 0) shareAccessTimestamps.delete(shareId);
+  }
+}
+const sweepTimer: any = setInterval(sweepShareTrackers, 60000);
+sweepTimer.unref?.();
+
+// High demand = more than HIGH_DEMAND_MAX_VIEWERS *different* clients on the same share inside the window.
+// Clients already admitted (e.g. the recipient hitting refresh) are never blocked by other people's traffic.
+function checkHighDemand(shareId: string, clientIp: string): boolean {
+  const now = Date.now();
+  let viewers = shareAccessTimestamps.get(shareId);
+  if (!viewers) {
+    viewers = new Map();
+    shareAccessTimestamps.set(shareId, viewers);
+    capMap(shareAccessTimestamps);
+  }
+  for (const [ip, t] of viewers) {
+    if (t <= now - HIGH_DEMAND_WINDOW_MS) viewers.delete(ip);
+  }
+  if (!viewers.has(clientIp) && viewers.size >= HIGH_DEMAND_MAX_VIEWERS) return true;
+  viewers.set(clientIp, now);
+  return false;
+}
 
 function checkShareRateLimit(key: string, limit: number = 10, windowMs: number = 60000): boolean {
+
   const now = Date.now();
   const record = shareRateLimitMap.get(key);
   if (!record || now > record.resetTime) {
     shareRateLimitMap.set(key, { attempts: 1, resetTime: now + windowMs });
+    capMap(shareRateLimitMap);
     return false; // Not limited
   }
   record.attempts += 1;
@@ -30,8 +80,7 @@ function checkShareRateLimit(key: string, limit: number = 10, windowMs: number =
 export async function viewShare(req: Request, res: Response) {
   try {
     const { shareId } = req.params;
-    const forwarded = req.headers['x-forwarded-for'];
-    const clientIp = (forwarded ? (Array.isArray(forwarded) ? forwarded[0] : forwarded) : '').split(',')[0].trim() || req.socket.remoteAddress || req.ip || '0.0.0.0';
+    const clientIp = getClientIp(req);
 
     // Rate limiting / Brute force protection per shareId and IP
     const rateLimitKey = `${clientIp}_${shareId}`;
@@ -39,7 +88,12 @@ export async function viewShare(req: Request, res: Response) {
       return res.status(429).json({ success: false, error: 'Muitas tentativas de acesso. Por favor, aguarde um minuto e tente novamente.' });
     }
 
+    if (checkHighDemand(shareId, clientIp)) {
+      return res.status(429).json({ success: false, highDemand: true, error: 'Este compartilhamento está com alta demanda.' });
+    }
+
     const filePath = path.join(SHARES_DIR, `${shareId}.json`);
+
     
     const db = getDB();
 

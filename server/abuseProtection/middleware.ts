@@ -11,7 +11,9 @@ const WINDOW_DURATION = 32 * 60 * 1000;
  * with complete isolation between application modules.
  */
 export async function abuseProtectionMiddleware(req: Request, res: Response, next: NextFunction) {
-  if (req.path === '/api/verify-recaptcha' || req.path.startsWith('/api/update/') || req.path === '/api/version') {
+  // Only apply abuse protection to API routes or sensitive endpoints.
+  // Never block frontend HTML, JS, CSS, or Vite internal requests.
+  if (!req.path.startsWith('/api/') || req.path === '/api/verify-recaptcha' || req.path.startsWith('/api/update/') || req.path === '/api/version') {
     return next();
   }
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { CheckSquare, CopyCheck, Trash2, X } from 'lucide-react';
+import { CheckSquare, CopyCheck, X } from 'lucide-react';
+import TrashIcon from './icons/TrashIcon';
 import { DecryptedImage } from '../types';
 import { isNativeApp, isMobileDevice } from '../utils/isNativeApp';
 
@@ -134,7 +135,7 @@ export default function SelectionBottomBar({
                 : 'bg-zinc-900/40 border-white/5 text-zinc-600 cursor-not-allowed opacity-40'
             }`}
           >
-            <Trash2 size={15} className="shrink-0" />
+            <TrashIcon size={15} className="shrink-0" />
             <span className="truncate">Excluir</span>
           </button>
         </div>

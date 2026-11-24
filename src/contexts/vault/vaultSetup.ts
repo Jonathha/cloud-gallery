@@ -1,10 +1,11 @@
 import { User } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { dbPrimary } from "../../firebase";
 import { deriveKey, generateSalt, encryptData } from "../../utils/crypto";
 import { generateVaultMasterKey, wrapVaultKey } from "../../utils/fileCrypto";
 import { saveKeyToLocal, removeKeyFromLocal } from "../../utils/db";
 import { signVaultData } from "../../utils/integrity";
+import { isQuickAccessEnabled, setManualLocked } from "../../utils/quickAccess";
+import { saveVaultSetupApi } from "../../services/vaultApiService";
+import { recordAuditEvent } from "../../services/adminAuditService";
 
 export async function setupVaultLogic(
   pin: string,
@@ -18,41 +19,38 @@ export async function setupVaultLogic(
     const salt = await generateSalt();
     const pinKey = await deriveKey(pin, salt, true);
 
-    const verification = await encryptData("vault-check", pinKey);
-    const mode = modeInput || (extraPasswordInput ? 'custom_extra' : 'standard');
-
-    // Gera a Vault Master Key (VMK) aleatória de 256 bits independente do PIN
+    // 1. Gera a Vault Master Key (VMK) aleatória de 256 bits independente do PIN
     const vmk = await generateVaultMasterKey();
     const encryptedVaultKey = await wrapVaultKey(vmk, pinKey);
 
+    const mode = modeInput || (extraPasswordInput ? 'custom_extra' : 'standard');
     let encryptedExtra = null;
     const now = Date.now();
     if (mode === 'custom_extra' && extraPasswordInput && extraPasswordInput.trim().length > 0) {
       encryptedExtra = await encryptData(extraPasswordInput.trim(), vmk);
     }
 
-    try {
-      await setDoc(doc(dbPrimary, "users", user.uid), {
-        email: user.email ? user.email.toLowerCase().trim() : "",
+    // 2. Envia os dados necessários para persistência no D1 via Web Crypto (sem OPAQUE e sem senha em texto)
+    if (navigator.onLine && user && user.uid && !user.uid.startsWith("offline_user")) {
+      const ok = await saveVaultSetupApi(user, {
         salt,
-        verification,
         encryptedVaultKey,
-        keyWrappingVersion: 1,
         encryptionMode: mode,
         extraPassword: encryptedExtra,
         extraPasswordUpdatedAt: encryptedExtra ? now : 0,
-        createdAt: serverTimestamp(),
       });
-    } catch (error: any) {
-      console.warn("Async setDoc failed or offline", error);
+
+      if (!ok) {
+        throw new Error("Erro de comunicação com o servidor ao salvar o cofre no D1. Verifique sua conexão e tente novamente.");
+      }
     }
 
     const initialSignature = await signVaultData(user.uid, 0, null);
     localStorage.setItem(
       `vault_data_${user.uid}`,
       JSON.stringify({
+        vaultVersion: 2,
         salt,
-        verification,
         encryptedVaultKey,
         keyWrappingVersion: 1,
         encryptionMode: mode,
@@ -69,6 +67,16 @@ export async function setupVaultLogic(
     await saveKeyToLocal(user.uid, vmk);
     setCryptoKey(vmk);
     setNeedsSetup(false);
+    recordAuditEvent({
+      type: 'vault_setup',
+      action: 'vault_setup',
+      userId: user.uid,
+      userEmail: user.email || undefined,
+      method: mode === 'custom_extra' ? 'Proteção Dupla (PIN + Senha Extra)' : 'Padrão (PIN)',
+      result: 'Cofre criptográfico configurado com sucesso',
+      status: 'success',
+      details: `Configuração inicial do cofre concluída (Modo: ${mode === 'custom_extra' ? 'Proteção Dupla' : 'Padrão'})`
+    }).catch(() => {});
   } catch (error) {
     throw error;
   }
@@ -79,7 +87,11 @@ export async function lockVaultLogic(
   setCryptoKey: (key: CryptoKey | null) => void,
 ) {
   if (user) {
-    await removeKeyFromLocal(user.uid);
+    if (isQuickAccessEnabled(user.uid)) {
+      setManualLocked(user.uid, true);
+    } else {
+      await removeKeyFromLocal(user.uid);
+    }
   }
   setCryptoKey(null);
 }

@@ -26,7 +26,6 @@ export function VideoPreviewTopBar({ props, actions }: Props) {
           props.onClose();
         }}
         className="p-2.5 text-white/90 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition-all cursor-pointer"
-        title="Voltar"
       >
         <ChevronLeft size={28} className="stroke-[2.5]" />
       </button>
@@ -35,7 +34,6 @@ export function VideoPreviewTopBar({ props, actions }: Props) {
         type="button"
         onClick={actions.handleRotate}
         className="p-2.5 text-white/90 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition-all cursor-pointer"
-        title="Girar orientação"
       >
         <RotateCw size={22} className="stroke-[2.2]" />
       </button>

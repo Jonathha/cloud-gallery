@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="pt-BR" translate="no">
+<html lang="pt-BR" translate="no" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="apple-touch-icon" href="/icon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#000000" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
@@ -12,79 +12,184 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="google" content="notranslate" />
     <meta name="zero-threat-verification" content="MTAwOTE=TVRBd09URT0=TVRBd09URT">
-    <title>Cloud Gallery</title>
-  </head>
-  <body>
-    <div id="root"></div>
+    <meta name="description" content="Armazenamento em nuvem com criptografia de ponta a ponta." />
+    <meta property="og:title" content="Remix Remix Remix: Cloud Gallery" />
+    <meta property="og:description" content="Armazenamento em nuvem com criptografia de ponta a ponta." />
+    <title>Remix Remix Remix: Cloud Gallery</title>
+    <link rel="stylesheet" href="/src/styles/spinner.css" />
     <script>
-      // Força a limpeza do cache e desregistra o Service Worker dentro de WebViews para garantir atualizações em tempo real
       (function() {
-        var ua = navigator.userAgent || '';
-        var isAndroidWebView = /wv/.test(ua) || (/Android/.test(ua) && /Version\//.test(ua)) || /wv/i.test(ua) || /WebView/i.test(ua);
-        var isIosWebView = /(iPhone|iPod|iPad).*AppleWebKit(?!.*Safari)/i.test(ua);
-        var searchParams = new URLSearchParams(window.location.search);
-        var isAppUrlParam = searchParams.has('app') || searchParams.has('webview') || searchParams.has('native');
-        var isWebView = !!(
-          window.ReactNativeWebView ||
-          window.GuarlyApp ||
-          window.GuarlyNativeBridge ||
-          (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.guarlyApp) ||
-          window.AndroidBridge ||
-          window.Android ||
-          window.appVersion ||
-          window.appBuildNumber ||
-          isAndroidWebView ||
-          isIosWebView ||
-          isAppUrlParam
-        );
-
-        var hostname = window.location.hostname;
-        var isAIStudio = hostname === 'localhost' || 
-                         hostname === '127.0.0.1' || 
-                         hostname.includes('ais-dev-') || 
-                         hostname.includes('ais-pre-') || 
-                         hostname.includes('aistudio');
-
-        if (isAIStudio) {
-          // Desregistra o Service Worker para evitar carregar index.html cacheado do PWA
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(registrations) {
-              for (var i = 0; i < registrations.length; i++) {
-                registrations[i].unregister().then(function() {
-                  console.log('Service Worker removido com sucesso no AI Studio.');
-                });
-              }
+        try {
+          var saved = localStorage.getItem('app_theme');
+          if (saved === 'light') {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.classList.add('theme-light', 'light');
+            document.documentElement.setAttribute('data-theme', 'light');
+            document.documentElement.style.backgroundColor = '#f8fafc';
+            document.documentElement.style.color = '#0f172a';
+          } else {
+            document.documentElement.classList.add('dark');
+            document.documentElement.classList.remove('theme-light', 'light');
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.documentElement.style.backgroundColor = '#000000';
+            document.documentElement.style.color = '#ffffff';
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        min-height: 100%;
+      }
+      html.dark, html.dark body {
+        background-color: #000000;
+        color: #ffffff;
+      }
+      html.theme-light, html.theme-light body {
+        background-color: #f8fafc;
+        color: #0f172a;
+      }
+    </style>
+    <script>
+      // Safe fallback for localStorage and sessionStorage inside sandboxed or third-party iframes (e.g. AI Studio preview)
+      (function() {
+        function createFallbackStorage() {
+          var store = {};
+          return {
+            getItem: function(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+            setItem: function(k, v) { store[k] = String(v); },
+            removeItem: function(k) { delete store[k]; },
+            clear: function() { store = {}; },
+            key: function(i) { return Object.keys(store)[i] || null; },
+            get length() { return Object.keys(store).length; }
+          };
+        }
+        try {
+          var testK = '__test_stg__';
+          window.localStorage.setItem(testK, testK);
+          window.localStorage.removeItem(testK);
+        } catch (e) {
+          try {
+            Object.defineProperty(window, 'localStorage', {
+              value: createFallbackStorage(),
+              configurable: true,
+              writable: true
             });
-          }
-
-          // Limpa todo o Cache Storage da API de Caches para forçar download do servidor
-          if ('caches' in window) {
-            caches.keys().then(function(names) {
-              for (var i = 0; i < names.length; i++) {
-                caches.delete(names[i]);
-              }
+          } catch (ex) {}
+        }
+        try {
+          var testK2 = '__test_stg2__';
+          window.sessionStorage.setItem(testK2, testK2);
+          window.sessionStorage.removeItem(testK2);
+        } catch (e) {
+          try {
+            Object.defineProperty(window, 'sessionStorage', {
+              value: createFallbackStorage(),
+              configurable: true,
+              writable: true
             });
+          } catch (ex) {}
+        }
+      })();
+    </script>
+  </head>
+  <body class="bg-black text-white" style="background-color: #000000; color: #ffffff; min-height: 100vh;">
+    <div id="root">
+      <!-- Loader estático: aparece antes do bundle carregar; o React o substitui ao montar -->
+      <div id="boot-loader" class="gs-loader gs-loader--immediate" role="status" aria-label="Carregando">
+        <div class="gs-loader__mark">
+          <span class="gs-spinner"><span class="gs-spinner__arc"></span></span>
+          <svg class="gs-loader__glyph" viewBox="118 118 276 276" fill="none" aria-hidden="true">
+            <rect x="128" y="128" width="256" height="256" rx="32" stroke="currentColor" stroke-width="20"></rect>
+            <path d="M168 344 L228 248 L288 308 L328 268 L344 288 L344 344 Z" fill="currentColor"></path>
+            <circle class="gs-loader__sun" cx="308" cy="208" r="24" fill="currentColor"></circle>
+          </svg>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function() {
+        try {
+          var ua = navigator.userAgent || '';
+          var isAndroidWebView = /wv/.test(ua) || (/Android/.test(ua) && /Version\//.test(ua)) || /wv/i.test(ua) || /WebView/i.test(ua);
+          var isIosWebView = /(iPhone|iPod|iPad).*AppleWebKit(?!.*Safari)/i.test(ua);
+          var searchParams = new URLSearchParams(window.location.search);
+          var isAppUrlParam = searchParams.has('app') || searchParams.has('webview') || searchParams.has('native');
+          var isWebView = !!(
+            window.ReactNativeWebView ||
+            window.GuarlyApp ||
+            window.GuarlyNativeBridge ||
+            (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.guarlyApp) ||
+            window.AndroidBridge ||
+            window.Android ||
+            window.appVersion ||
+            window.appBuildNumber ||
+            isAndroidWebView ||
+            isIosWebView ||
+            isAppUrlParam
+          );
+
+          var hostname = window.location.hostname || '';
+          var isAIStudio = hostname === 'localhost' || 
+                           hostname === '127.0.0.1' || 
+                           hostname.indexOf('ais-dev-') > -1 || 
+                           hostname.indexOf('ais-pre-') > -1 || 
+                           hostname.indexOf('aistudio') > -1 ||
+                           hostname.indexOf('run.app') > -1;
+
+          if (isAIStudio) {
+            // Desregistra o Service Worker no AI Studio de forma segura
+            if ('serviceWorker' in navigator) {
+              try {
+                navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                  if (registrations && registrations.length) {
+                    for (var i = 0; i < registrations.length; i++) {
+                      registrations[i].unregister().catch(function() {});
+                    }
+                  }
+                }).catch(function() {});
+              } catch (swErr) {}
+            }
+
+            // Limpa o Cache Storage no AI Studio de forma segura
+            if ('caches' in window) {
+              try {
+                caches.keys().then(function(names) {
+                  if (names && names.length) {
+                    for (var i = 0; i < names.length; i++) {
+                      caches.delete(names[i]).catch(function() {});
+                    }
+                  }
+                }).catch(function() {});
+              } catch (cErr) {}
+            }
+          } else if (isWebView && navigator.onLine) {
+            try {
+              var cacheBustKey = 'webview_cache_bust_v2.0.2';
+              if (!localStorage.getItem(cacheBustKey)) {
+                localStorage.setItem(cacheBustKey, 'true');
+                setTimeout(function() {
+                  window.location.reload();
+                }, 150);
+              }
+            } catch (storageErr) {}
           }
-        } else if (isWebView && navigator.onLine) {
-          // Limpa cache uma única vez para esta versão específica da build
-          var cacheBustKey = 'webview_cache_bust_v2.0.2';
-          if (!localStorage.getItem(cacheBustKey)) {
-            localStorage.setItem(cacheBustKey, 'true');
-            console.log('Forçando recarregamento único para limpar caches e puxar arquivos novos da Cloudflare...');
-            setTimeout(function() {
-              window.location.reload();
-            }, 150);
-          }
+        } catch (mainScriptErr) {
+          console.warn('[Bootstrap] Script warning handled:', mainScriptErr);
         }
       })();
 
-      // Proteção permanente contra falha de carregamento de chunk (auto-recarrega)
+      // Proteção segura contra falha de carregamento de chunk (apenas fora do ambiente de desenvolvimento)
       window.addEventListener('error', function(e) {
         var errorMsg = (e && e.message) ? e.message : '';
         var isChunkError = errorMsg.indexOf('ChunkLoadError') > -1 || 
                            errorMsg.indexOf('Loading chunk') > -1 ||
                            errorMsg.indexOf('Failed to fetch dynamically imported module') > -1;
-        if (isChunkError) {
+        var hostname = window.location.hostname || '';
+        var isDev = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.indexOf('ais-dev-') > -1;
+        if (isChunkError && !isDev) {
           console.warn('Falha de ativos detectada! Recarregando página para buscar versão mais recente...');
           window.location.reload();
         }

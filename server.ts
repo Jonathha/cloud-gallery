@@ -5,9 +5,9 @@ import path from "path";
 import http from "http";
 import { initFirebase } from "./server/firebaseAdmin";
 import { startB2BackupService } from "./server/b2BackupService";
-import { startChatPushNotifier } from "./server/chatPushNotifier";
 import storageRouter from "./server/storageController";
 import shareRouter from "./server/shareRouter";
+import { getClientIp } from "./server/shareHelpers";
 import { setupZeroThreat } from "./server/zeroThreatMiddleware";
 import { sendCode, verifyCode } from "./server/verificationController";
 import { migrateUser } from "./server/migrationController";
@@ -16,16 +16,8 @@ import { getApkDownloadUrl, getLatestApkKey, getApkStream, getExeDownloadUrl } f
 
 import { verifyRecaptcha } from "./server/recaptchaController";
 import { handleGuarlyChat } from "./server/guarlyAiController";
-import { handleRecordLogExpress, handleFetchLogsExpress } from "./server/logsController";
+import { handleRecordLogExpress } from "./server/logsController";
 import { abuseProtectionMiddleware, recordProbeAttempt } from "./server/abuseProtectionMiddleware";
-import { 
-  handleRouletteStatusExpress, 
-  handleRouletteSpinExpress, 
-  handleAdminRouletteUsersExpress, 
-  handleAdminRouletteSpinsExpress, 
-  handleAdminRouletteSpinDetailExpress,
-  handleAdminUpdateUserSpinsExpress
-} from "./server/rouletteController";
 
 async function startServer() {
   const app = express();
@@ -46,14 +38,7 @@ async function startServer() {
 
   // Helper to retrieve client IP safely
   app.get('/api/ip', (req, res) => {
-    let clientIp = '0.0.0.0';
-    const forwarded = req.headers['x-forwarded-for'];
-    if (forwarded) {
-      const ipStr = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-      clientIp = ipStr.split(',')[0].trim();
-    } else {
-      clientIp = req.socket.remoteAddress || req.ip || '0.0.0.0';
-    }
+    const clientIp = getClientIp(req);
     res.json({ ip: clientIp });
   });
 
@@ -83,17 +68,8 @@ async function startServer() {
   // Guarly AI 1.0 Chat Route
   app.post("/api/guarly/chat", handleGuarlyChat);
 
-  // Server-side audit log recorder endpoint for logspupurim
+  // Server-side audit log recorder endpoint
   app.post("/api/logs/record", handleRecordLogExpress);
-  app.get("/api/logs/list", handleFetchLogsExpress);
-
-  // Roulette Endpoints
-  app.get("/api/roulette/status", requireAuth, handleRouletteStatusExpress);
-  app.post("/api/roulette/spin", requireAuth, handleRouletteSpinExpress);
-  app.get("/api/admin/roulette/users", requireAuth, handleAdminRouletteUsersExpress);
-  app.post("/api/admin/roulette/update-spins", requireAuth, handleAdminUpdateUserSpinsExpress);
-  app.get("/api/admin/roulette/spins", requireAuth, handleAdminRouletteSpinsExpress);
-  app.get("/api/admin/roulette/spins/:id", requireAuth, handleAdminRouletteSpinDetailExpress);
 
   // Security Probe Reporting Route
   app.all("/api/security/report-probe", (req, res) => {
@@ -124,7 +100,7 @@ async function startServer() {
         console.log(`[Server] Redirecting client to secure pre-signed R2 URL (Expires in 5 min): ${result.key}`);
         return res.redirect(302, result.url);
       }
-      return res.status(404).send("APK file not found or unable to fetch source from Cloudflare R2 bucket 'guarly'");
+      return res.redirect(302, "https://pub-822d342550ca446b9e7a5974089360b5.r2.dev/Guarly.apk");
     } catch (err: any) {
       console.error("[Server] Error serving APK download redirect:", err);
       if (!res.headersSent) {
@@ -167,6 +143,15 @@ async function startServer() {
   // Mount API Routers
   app.use('/api/storage', storageRouter);
   app.use('/api/share', shareRouter);
+
+  // Local development fallback for chat auth
+  app.post('/api/chat/auth', (req, res) => {
+    res.json({
+      success: false,
+      error: "Firebase Admin is disabled in local development.",
+      fallbackToAnonymous: true
+    });
+  });
 
   // Catch-all 404 handler for any invalid /api/* endpoints
   app.use('/api/*', (req, res) => {

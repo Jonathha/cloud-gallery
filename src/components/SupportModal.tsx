@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Send, MessageSquare, ShieldAlert, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { dbPrimary } from '../firebase';
+import { dbChat } from '../firebase';
 import { collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
 
 interface Message {
@@ -29,7 +29,7 @@ export default function SupportModal({ isOpen, onClose }: { isOpen: boolean; onC
     setAuthError(null);
 
     const q = query(
-      collection(dbPrimary, 'support_messages'),
+      collection(dbChat, 'support_messages'),
       where('primaryUserId', '==', user.uid),
       orderBy('createdAt', 'asc')
     );
@@ -58,7 +58,7 @@ export default function SupportModal({ isOpen, onClose }: { isOpen: boolean; onC
     if (!inputText.trim() || !user) return;
 
     try {
-      await addDoc(collection(dbPrimary, 'support_messages'), {
+      await addDoc(collection(dbChat, 'support_messages'), {
         primaryUserId: user.uid,
         userEmail: user.email || 'Usuário',
         text: inputText.trim(),

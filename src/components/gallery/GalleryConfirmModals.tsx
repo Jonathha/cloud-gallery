@@ -35,7 +35,7 @@ export default function GalleryConfirmModals({
         onClose={() => setImageToDelete(null)}
         onConfirm={handleDelete}
         title="Excluir arquivo?"
-        message="Tem certeza que deseja excluir esta mídia do cofre?"
+        message="Esta mídia será movida para a lixeira."
         confirmText="Excluir"
         cancelText="Cancelar"
       />

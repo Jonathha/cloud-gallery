@@ -25,6 +25,5 @@ export type ModuleType =
   | 'auth'
   | 'upload'
   | 'chat'
-  | 'roulette'
   | 'logs'
   | 'general';

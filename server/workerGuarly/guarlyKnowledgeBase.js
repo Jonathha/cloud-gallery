@@ -1,15 +1,5 @@
 export const KNOWLEDGE_BASE = [
   {
-    id: "install_app",
-    keywords: ["instalar app", "baixar", "abaixar", "abaixar app", "instalação", "pwa", "tela inicial", "app", "aplicativo"],
-    title: "Instalar Aplicativo (PWA / APK)",
-    location: "Configurações > Instalar App",
-    path: "Configurações > Instalar App",
-    description: "Permite baixar a versão móvel oficial (.apk) ou instalar como um aplicativo PWA. Existe uma aba dedicada nas Configurações chamada 'Instalar App'.",
-    permissions: "Qualquer usuário logado",
-    action: { type: "NAVIGATE_TAB", description: "Ir para Configurações > Instalar App", data: { tab: "settings-installApp" } }
-  },
-  {
     id: "change_pin",
     keywords: ["pin", "trocar pin", "mudar pin", "alterar pin", "redefinir pin", "senha cofre", "mudar senha", "alterar senha"],
     title: "Alterar ou Trocar o PIN do Cofre",
@@ -48,16 +38,6 @@ export const KNOWLEDGE_BASE = [
     description: "Comunicação segura com outros usuários. Suporta mensagens de texto, envio de imagens do cofre e áudios gravados na hora. O usuário precisa adicionar contatos usando o e-mail ou código de vínculo.",
     permissions: "Usuário deve estar online e autenticado",
     action: { type: "NAVIGATE_TAB", description: "Ir para o Chat Seguro", data: { tab: "chat" } }
-  },
-  {
-    id: "active_sessions",
-    keywords: ["sessoes", "sessões", "dispositivos", "aparelhos", "desconectar", "segurança", "remover acesso"],
-    title: "Controle de Sessões Ativas",
-    location: "Configurações > Controle",
-    path: "Configurações > Controle de Sessões",
-    description: "Mostra todos os navegadores, celulares e dispositivos conectados à conta do usuário. Permite revogar (desconectar) remotamente qualquer sessão suspeita.",
-    permissions: "Usuário autenticado",
-    action: { type: "NAVIGATE_TAB", description: "Ir para Controle de Sessões", data: { tab: "settings-control" } }
   },
   {
     id: "storage_management",

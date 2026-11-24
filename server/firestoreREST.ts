@@ -1,3 +1,4 @@
+// LEGACY (Express + Firestore): caminho de desenvolvimento. A produção roda no Cloudflare Worker + D1 (server/workerShare, server/workerD1Shares). Ver README.md.
 export const EXPECTED_PROJECT_ID = "gen-lang-client-0718492200";
 
 function parseFirestoreValue(valObj: any): any {

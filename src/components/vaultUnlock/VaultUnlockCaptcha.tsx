@@ -61,10 +61,20 @@ export function VaultUnlockCaptcha({
               />
             </div>
 
-            <div className="text-center">
-              <p className={`text-xs font-medium px-2 leading-relaxed min-h-[32px] flex items-center justify-center ${captchaStatus === "success" ? "text-emerald-400 bg-emerald-500/10 py-1.5 rounded-lg" : captchaStatus === "error" ? "text-red-400 bg-red-500/10 py-1.5 rounded-lg animate-bounce" : captchaStatus === "verifying" ? "text-blue-400 bg-blue-500/10 py-1.5 rounded-lg" : "text-zinc-400"}`}>
-                {captchaMsg}
-              </p>
+            <div className="text-center min-h-[36px] flex items-center justify-center">
+              {captchaMsg && (
+                <p className={`text-xs font-medium px-3 py-1.5 rounded-xl border leading-relaxed transition-all ${
+                  captchaStatus === "success" 
+                    ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/20" 
+                    : captchaStatus === "error" 
+                    ? "text-red-300 bg-red-500/10 border-red-500/20" 
+                    : captchaStatus === "verifying" 
+                    ? "text-amber-300 bg-amber-500/10 border-amber-500/20" 
+                    : "text-zinc-400 bg-zinc-900 border-zinc-800"
+                }`}>
+                  {captchaMsg}
+                </p>
+              )}
             </div>
           </motion.div>
         </motion.div>

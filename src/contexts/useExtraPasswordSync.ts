@@ -1,8 +1,7 @@
 import { useEffect } from "react";
 import { User } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { dbPrimary } from "../firebase";
 import { encryptData } from "../utils/crypto";
+import { fetchVaultConfigApi, updateVaultSettingsApi } from "../services/vaultApiService";
 
 export function useExtraPasswordSync(
   user: User | null,
@@ -26,13 +25,10 @@ export function useExtraPasswordSync(
           setSecurityImageId(currentLocalData.securityImageId || null);
         }
 
-        // 2. Sincronização em segundo plano com o Firestore (com cryptoKey válido!)
+        // 2. Sincronização em segundo plano com o D1
         try {
-          const userDoc = await getDoc(doc(dbPrimary, "users", user.uid));
-          if (userDoc.exists()) {
-            const freshData = userDoc.data();
-            
-            // Se não houver dados locais, criamos um esqueleto
+          const freshData = await fetchVaultConfigApi(user);
+          if (freshData) {
             const localData = currentLocalData || {
               salt: freshData.salt,
               verification: freshData.verification,
@@ -54,7 +50,6 @@ export function useExtraPasswordSync(
 
             if (localExtraPasswordUpdatedAt > remoteExtraPasswordUpdatedAt) {
               shouldUpdateExtraPassword = false;
-              console.log("[AuthContext] Mantendo senha extra local pois é mais recente que a da nuvem");
             }
 
             const localSecurityImageIdUpdatedAt = localData.securityImageIdUpdatedAt || 0;
@@ -62,7 +57,6 @@ export function useExtraPasswordSync(
 
             if (localSecurityImageIdUpdatedAt > remoteSecurityImageIdUpdatedAt) {
               shouldUpdateSecurityImage = false;
-              console.log("[AuthContext] Mantendo imagem de segurança local pois é mais recente que a da nuvem");
             }
 
             const finalExtraPassword = shouldUpdateExtraPassword ? freshData.extraPassword : localData.extraPassword;
@@ -71,11 +65,9 @@ export function useExtraPasswordSync(
             const finalExtraPasswordUpdatedAt = shouldUpdateExtraPassword ? (freshData.extraPasswordUpdatedAt || 0) : localExtraPasswordUpdatedAt;
             const finalSecurityImageIdUpdatedAt = shouldUpdateSecurityImage ? (freshData.securityImageIdUpdatedAt || 0) : localSecurityImageIdUpdatedAt;
 
-            // Decodifica a senha final com a chave segura ativa
             await setOrDecryptExtraPassword(finalExtraPassword, cryptoKey);
             setSecurityImageId(finalSecurityImageId);
 
-            // Grava o cache local atualizado e sincronizado
             localStorage.setItem(
               `vault_data_${user.uid}`,
               JSON.stringify({
@@ -101,10 +93,10 @@ export function useExtraPasswordSync(
           try {
             const now = Date.now();
             const encrypted = await encryptData(currentLocalData.extraPassword, cryptoKey);
-            await setDoc(doc(dbPrimary, "users", user.uid), { 
+            await updateVaultSettingsApi(user, { 
               extraPassword: encrypted,
               extraPasswordUpdatedAt: now
-            }, { merge: true });
+            });
             
             const updatedCache = localStorage.getItem(`vault_data_${user.uid}`);
             if (updatedCache) {

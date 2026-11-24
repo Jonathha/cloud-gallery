@@ -34,4 +34,3 @@ export {
 } from "./logRecordAuditSecurity.js";
 
 export { handleRecordLog } from "./logRecord.js";
-export { handleFetchLogs } from "./logList.js";

@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Sparkles, ExternalLink } from 'lucide-react';
+import { Zap, Wrench, ShieldCheck, Share2 } from 'lucide-react';
+import { APP_VERSION } from '../../constants';
 
 interface NewsTabProps {
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -8,78 +9,74 @@ interface NewsTabProps {
 
 export default function NewsTab({ showToast }: NewsTabProps) {
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-white/10 rounded-xl text-white">
-            <Sparkles size={20} />
+        <div className="flex items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-white/10 rounded-xl text-white">
+              <Zap size={20} />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-white">O que há de novo</h3>
+              <p className="text-xs text-zinc-400">Versão {APP_VERSION}</p>
+            </div>
           </div>
-          <h3 className="text-lg font-semibold text-white">O que há de novo</h3>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           {[
             {
-              title: "Interface Renovada",
-              description: "Design mais limpo e moderno, focado na sua privacidade.",
-              date: "Março 2026"
+              icon: Zap,
+              title: "Acesso Rápido Instantâneo",
+              description: "Entrada acelerada no cofre por PIN ou biometria com carregamento local de mídias.",
+              date: "v1.2.0"
             },
             {
-              title: "Reparação Automática",
-              description: "Novo sistema que detecta e corrige automaticamente imagens que falham ao carregar.",
-              date: "Março 2026"
+              icon: Wrench,
+              title: "Manutenção e Lixeira",
+              description: "Sistema de reparação automática de mídias e lixeira temporária com retenção de 30 dias.",
+              date: "v1.2.0"
             },
             {
-              title: "Criptografia Avançada",
-              description: "Suas fotos agora contam com uma camada extra de proteção militar.",
-              date: "Fevereiro 2026"
+              icon: ShieldCheck,
+              title: "Proteção Extra e Cofre Falso",
+              description: "Mídias com senha dedicada e suporte a PIN alternativo para modo de disfarce.",
+              date: "v1.2.0"
             },
             {
-              title: "Lixeira Local",
-              description: "Apagou sem querer? Agora você tem 30 dias para recuperar suas fotos.",
-              date: "Janeiro 2026"
+              icon: Share2,
+              title: "Compartilhamento Criptografado",
+              description: "Links temporários protegidos por senha com criptografia AES-256 de ponta a ponta.",
+              date: "v1.2.0"
             }
-          ].map((item, i) => (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              key={i}
-              className="p-4 bg-zinc-900/50 border border-white/10 rounded-2xl group hover:border-white/20 transition-all"
-            >
-              <div className="flex justify-between items-start mb-1">
-                <h4 className="text-white font-medium">{item.title}</h4>
-                <span className="text-[10px] uppercase tracking-wider text-zinc-600 font-bold">{item.date}</span>
-              </div>
-              <p className="text-sm text-zinc-500 leading-relaxed">
-                {item.description}
-              </p>
-            </motion.div>
-          ))}
-        </div>
-
-        <div className="mt-8 p-6 bg-gradient-to-br from-white/10 to-transparent border border-white/10 rounded-3xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-500">
-            <Sparkles size={80} />
-          </div>
-          <div className="relative z-10">
-            <h4 className="text-white font-bold text-lg mb-2">Sugira uma função</h4>
-            <p className="text-sm text-zinc-400 mb-6 max-w-[200px]">
-              Sua opinião é fundamental para evoluirmos o aplicativo.
-            </p>
-            <button
-              onClick={() => {
-                window.open('https://t.me/seu_canal', '_blank');
-                showToast('Abrindo canal de sugestões...');
-              }}
-              className="flex items-center gap-2 px-6 py-3 bg-white text-black font-bold rounded-2xl hover:bg-zinc-200 active:scale-95 transition-all text-sm"
-            >
-              Enviar Sugestão
-              <ExternalLink size={16} />
-            </button>
-          </div>
+          ].map((item, i) => {
+            const Icon = item.icon;
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.08 }}
+                key={i}
+                className="p-4 bg-zinc-900/50 border border-white/10 rounded-2xl flex items-start gap-3.5 group hover:border-white/20 transition-all"
+              >
+                <div className="p-2.5 bg-zinc-900 rounded-xl border border-white/5 text-zinc-300 shrink-0 mt-0.5">
+                  <Icon size={18} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-start mb-0.5">
+                    <h4 className="text-white font-medium text-sm">{item.title}</h4>
+                    <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">{item.date}</span>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    {item.description}
+                  </p>
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
+

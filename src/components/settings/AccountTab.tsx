@@ -1,16 +1,13 @@
 import React from "react";
-import { motion } from "framer-motion";
-import { usePasswordChangeLogic } from "../../hooks/usePasswordChangeLogic";
+import { motion } from "motion/react";
+import { User, Shield } from "lucide-react";
 import { authPrimary } from "../../firebase";
-import { useAuth } from "../../contexts/AuthContext";
-import { useAccountSettingsLogic } from "../../hooks/settings/useAccountSettingsLogic";
-import { AccountActions } from "./account/AccountActions";
+import { usePasswordChangeLogic } from "../../hooks/usePasswordChangeLogic";
 import { UserProfileHeader } from "./account/UserProfileHeader";
-import { AccountPasswordFormSection } from "./account/AccountPasswordFormSection";
-import { SecurityPasswordFormSection } from "./account/SecurityPasswordFormSection";
-import { VaultPinFormSection } from "./account/VaultPinFormSection";
-import { LinkEmailPasswordFormSection } from "./account/LinkEmailPasswordFormSection";
-import { unlink } from "firebase/auth";
+import { AccountActions } from "./account/AccountActions";
+import { useAccountTabUnlink } from "./account/useAccountTabUnlink";
+import { AccountPasswordOrLinkSection } from "./account/AccountPasswordOrLinkSection";
+import UnlinkPasswordModal from "./account/UnlinkPasswordModal";
 
 interface AccountTabProps {
   user: any;
@@ -22,196 +19,120 @@ interface AccountTabProps {
   onClose?: () => void;
 }
 
-export default function AccountTab({
-  user,
-  showToast,
-  logOut,
-  onClose,
-}: AccountTabProps) {
-  const activeUser = authPrimary.currentUser || user;
-  const [isLinkedManual, setIsLinkedManual] = React.useState<boolean | null>(null);
-  const [isUnlinking, setIsUnlinking] = React.useState(false);
+export default function AccountTab({ user, showToast, logOut }: AccountTabProps) {
+  const [currentUserState, setCurrentUserState] = React.useState(() => authPrimary.currentUser || user);
 
-  const isEmailProvider = React.useMemo(() => {
-    if (isLinkedManual === true) return true;
-    if (isLinkedManual === false) return false;
-    return (
-      activeUser?.providerData?.some((p: any) => p.providerId === "password") ||
-      (!activeUser?.providerData && activeUser?.email)
-    );
-  }, [isLinkedManual, activeUser]);
-
-  const handleUnlink = async () => {
-    if (!activeUser) return;
-
-    if (
-      !window.confirm(
-        "Tem certeza que deseja desativar o acesso por e-mail e senha? Você ainda poderá fazer login normalmente usando sua conta Google."
-      )
-    ) {
-      return;
-    }
-
-    setIsUnlinking(true);
+  const refreshUserData = async () => {
     try {
-      await unlink(activeUser, "password");
-      setIsLinkedManual(false);
-      localStorage.setItem("dismiss_email_pass_banner_v1", "true");
-      showToast("Acesso por e-mail e senha desativado com sucesso!", "success");
-    } catch (err: any) {
-      console.error("[AccountTab] Erro ao desvincular senha:", err);
-      showToast(err.message || "Erro ao desativar o acesso por senha.", "error");
-    } finally {
-      setIsUnlinking(false);
+      if (authPrimary.currentUser) {
+        await authPrimary.currentUser.reload();
+        setCurrentUserState(authPrimary.currentUser);
+      }
+    } catch (e) {
+      console.warn("[AccountTab] Erro ao recarregar dados do usuário:", e);
     }
   };
 
-  const {
-    isChangingPassword,
-    setIsChangingPassword,
-    currentPassword,
-    setCurrentPassword,
-    newPassword,
-    setNewPassword,
-    confirmPassword,
-    setConfirmPassword,
-    isLoading,
-    isSendingEmail,
-    handleChangePassword,
-    handleSendResetEmail,
-  } = usePasswordChangeLogic(user, showToast);
-
-  const {
-    extraPassword,
-    cryptoKey,
-    lockVault,
-    updateExtraPassword,
-    changeVaultPin,
-    registerFailedAttempt,
-    resetFailedAttempts,
-  } = useAuth();
-
-  const {
-    isChangingExtraPassword,
-    setIsChangingExtraPassword,
-    currentExtraPassword,
-    setCurrentExtraPassword,
-    newExtraPasswordState,
-    setNewExtraPasswordState,
-    confirmNewExtraPassword,
-    setConfirmNewExtraPassword,
-    isUpdatingExtraPassword,
-
-    isChangingVaultPin,
-    setIsChangingVaultPin,
-    currentVaultPin,
-    setCurrentVaultPin,
-    newVaultPin,
-    setNewVaultPin,
-    confirmNewVaultPin,
-    setConfirmNewVaultPin,
-    isUpdatingVaultPin,
-
-    handleChangeVaultPin,
-    handleChangeExtraPassword,
-  } = useAccountSettingsLogic({
+  const activeUser = authPrimary.currentUser || currentUserState;
+  const { isEmailProvider, canUnlink, isUnlinking, setIsLinkedManual, handleUnlink, showConfirmModal, closeConfirmModal, executeUnlink, unlinkPassword, setUnlinkPassword } = useAccountTabUnlink({
+    activeUser,
     showToast,
-    onClose,
-    extraPassword,
-    cryptoKey,
-    lockVault,
-    updateExtraPassword,
-    changeVaultPin,
-    registerFailedAttempt,
-    resetFailedAttempts,
+    onRefreshUser: refreshUserData,
   });
+  const pwLogic = usePasswordChangeLogic(activeUser, showToast);
+
+  const onLinkSuccess = async () => {
+    setIsLinkedManual(true);
+    await refreshUserData();
+    localStorage.setItem("dismiss_email_pass_banner_v1", "true");
+  };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 select-none">
       <motion.div
-        initial={{ opacity: 0, y: 15 }}
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+        className="space-y-1.5"
       >
-        <h3 className="text-lg font-semibold text-white mb-2">Sua Conta</h3>
-        <p className="text-sm text-zinc-400 mb-6">
-          Gerencie sua sessão e informações de acesso.
-        </p>
-
-        <div className="p-5 bg-zinc-900/50 border border-white/10 rounded-2xl space-y-6">
-          <UserProfileHeader user={user} />
-
-          <div className="pt-4 border-t border-white/10 space-y-3">
-            {isEmailProvider ? (
-              <AccountPasswordFormSection
-                isChangingPassword={isChangingPassword}
-                setIsChangingPassword={setIsChangingPassword}
-                passwordProps={{
-                  currentPassword,
-                  setCurrentPassword,
-                  newPassword,
-                  setNewPassword,
-                  confirmPassword,
-                  setConfirmPassword,
-                  isLoading,
-                  isSendingEmail,
-                  handleChangePassword,
-                  handleSendResetEmail,
-                }}
-                onUnlink={handleUnlink}
-                isUnlinking={isUnlinking}
-              />
-            ) : (
-              <LinkEmailPasswordFormSection
-                onLinkSuccess={() => {
-                  setIsLinkedManual(true);
-                  localStorage.setItem("dismiss_email_pass_banner_v1", "true");
-                }}
-                showToast={showToast}
-              />
-            )}
-
-            <SecurityPasswordFormSection
-              isChangingExtraPassword={isChangingExtraPassword}
-              setIsChangingExtraPassword={setIsChangingExtraPassword}
-              extraPassword={extraPassword}
-              securityProps={{
-                currentExtraPassword,
-                setCurrentExtraPassword,
-                newExtraPasswordState,
-                setNewExtraPasswordState,
-                confirmNewExtraPassword,
-                setConfirmNewExtraPassword,
-                isUpdatingExtraPassword,
-                handleChangeExtraPassword,
-              }}
-            />
-
-            <VaultPinFormSection
-              isChangingVaultPin={isChangingVaultPin}
-              setIsChangingVaultPin={setIsChangingVaultPin}
-              vaultProps={{
-                currentVaultPin,
-                setCurrentVaultPin,
-                newVaultPin,
-                setNewVaultPin,
-                confirmNewVaultPin,
-                setConfirmNewVaultPin,
-                isUpdatingVaultPin,
-                handleChangeVaultPin,
-              }}
-            />
-
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.4 }}
-            >
-              <AccountActions logOut={logOut} />
-            </motion.div>
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 shrink-0">
+            <User size={20} strokeWidth={2} />
+          </div>
+          <div>
+            <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+              Sua Conta
+            </h3>
+            <p className="text-xs sm:text-sm text-zinc-400">
+              Gerencie seus dados de acesso, login e sessão ativa.
+            </p>
           </div>
         </div>
       </motion.div>
+
+      {/* Cartão de Perfil do Usuário */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, delay: 0.05 }}
+      >
+        <UserProfileHeader user={currentUserState} />
+      </motion.div>
+
+      {/* Seção de Credenciais de Acesso da Conta */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, delay: 0.1 }}
+        className="space-y-2.5"
+      >
+        <div className="px-1 flex items-center justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+            Acesso & Credenciais
+          </span>
+          <span className="text-[11px] text-zinc-400 font-mono">
+            Login na Nuvem
+          </span>
+        </div>
+
+        <AccountPasswordOrLinkSection
+          isEmailProvider={isEmailProvider}
+          canUnlink={canUnlink}
+          isChangingPassword={pwLogic.isChangingPassword}
+          setIsChangingPassword={pwLogic.setIsChangingPassword}
+          passwordProps={pwLogic}
+          onUnlink={handleUnlink}
+          isUnlinking={isUnlinking}
+          onLinkSuccess={onLinkSuccess}
+          showToast={showToast}
+        />
+      </motion.div>
+
+      {/* Seção de Sessão / Logout */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, delay: 0.15 }}
+        className="space-y-2.5 pt-2"
+      >
+        <div className="px-1">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+            Gerenciamento de Sessão
+          </span>
+        </div>
+
+        <AccountActions logOut={logOut} />
+      </motion.div>
+
+      {/* Modal de Confirmação para Desativar Acesso por Senha */}
+      <UnlinkPasswordModal
+        isOpen={showConfirmModal}
+        isLoading={isUnlinking}
+        password={unlinkPassword}
+        onPasswordChange={setUnlinkPassword}
+        onClose={closeConfirmModal}
+        onConfirm={executeUnlink}
+      />
     </div>
   );
 }

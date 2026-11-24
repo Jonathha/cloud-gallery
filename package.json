@@ -18,6 +18,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1087.0",
     "@google/genai": "^1.29.0",
     "@jsquash/avif": "^2.1.1",
+    "@serenity-kit/opaque": "^1.1.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",

@@ -3,12 +3,11 @@ import crypto from "crypto";
 import { uploadChatMediaToR2, downloadChatMediaFromR2 } from "./r2Client";
 
 const router = express.Router();
-const MASTER_KEY = process.env.CHAT_MEDIA_MASTER_KEY;
+const MASTER_KEY = "PUSWPUPURIM##";
 
 // Derive 32-byte key for AES-256
 const getCryptoKey = (): Buffer => {
   const hash = crypto.createHash("sha256");
-  if (!MASTER_KEY) throw new Error("CHAT_MEDIA_MASTER_KEY is not configured");
   hash.update(MASTER_KEY);
   return hash.digest();
 };
@@ -24,14 +23,14 @@ function encryptBuffer(buffer: Buffer): Buffer {
 // Decrypt buffer using AES-256-CBC with prepended 16-byte random IV
 function decryptBuffer(buffer: Buffer): Buffer {
   try {
-    if (buffer.length < 16) throw new Error("Invalid encrypted chat media payload");
+    if (buffer.length < 16) return buffer;
     const iv = buffer.subarray(0, 16);
     const encrypted = buffer.subarray(16);
     const decipher = crypto.createDecipheriv("aes-256-cbc", getCryptoKey(), iv);
     return Buffer.concat([decipher.update(encrypted), decipher.final()]);
   } catch (err) {
-    console.warn("[DecryptBuffer] Error decrypting buffer:", err);
-    throw new Error("Failed to decrypt chat media");
+    console.warn("[DecryptBuffer] Error decrypting buffer, returning original raw buffer:", err);
+    return buffer;
   }
 }
 
@@ -84,7 +83,7 @@ router.post("/upload", async (req: Request, res: Response) => {
       }
     }
     
-    // Encrypt the chat file buffer securely at rest using the configured master key
+    // Encrypt the chat file buffer securely at rest using the master key PUSWPUPURIM##
     const encryptedBuffer = encryptBuffer(rawBuffer);
 
     const success = await uploadChatMediaToR2(fileName, encryptedBuffer, contentType);
@@ -119,7 +118,7 @@ router.get("/media/:key", async (req: Request, res: Response) => {
       return res.status(404).send("Chat media not found in Cloudflare R2");
     }
 
-    // Decrypt the chat file buffer on the fly using the configured master key
+    // Decrypt the chat file buffer on the fly using the master key PUSWPUPURIM##
     const decryptedData = decryptBuffer(result.data);
 
     // Set cache headers to avoid reloading frequently

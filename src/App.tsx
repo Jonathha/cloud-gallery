@@ -11,9 +11,9 @@ import Login from './components/Login';
 import ErrorBoundary from './components/ErrorBoundary';
 import PrivacyScreen from './components/PrivacyScreen';
 import { useWebAutoUpdate } from './hooks/useWebAutoUpdate';
-import { Loader2 } from 'lucide-react';
-import { motion } from 'motion/react';
+import LoadingMark from './components/LoadingMark';
 import { subscribeSecurityState, SecurityState, resetSecurityState } from './utils/securityInterceptor';
+import GlobalTooltip from './components/GlobalTooltip';
 
 // Lazy loading of private and heavy modules - unauthenticated users do NOT download these bundles
 const Gallery = lazy(() => import('./components/Gallery'));
@@ -25,18 +25,7 @@ const InstallAppBanner = lazy(() => import('./components/InstallAppBanner'));
 const CleanNotFoundView = lazy(() => import('./components/CleanNotFoundView'));
 const BlockedPage = lazy(() => import('./components/BlockedPage'));
 
-const ComponentLoader = () => (
-  <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center relative overflow-hidden">
-    <div className="relative">
-      <motion.div
-        animate={{ opacity: [0.3, 0.6, 0.3] }}
-        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute inset-0 blur-xl bg-white/30 rounded-full"
-      />
-      <Loader2 className="w-10 h-10 text-white animate-spin relative z-10" strokeWidth={1.5} />
-    </div>
-  </div>
-);
+const ComponentLoader = LoadingMark;
 
 function AppContent() {
   useWebAutoUpdate();
@@ -50,7 +39,8 @@ function AppContent() {
   }, []);
 
   // If we are in public sharing mode, render the public view directly!
-  const isShare = new URLSearchParams(window.location.search).has('share');
+  const urlParams = new URLSearchParams(window.location.search);
+  const isShare = urlParams.has('share');
 
   // Handle clean 404 for suspicious/invalid pathname
   const pathname = window.location.pathname;
@@ -147,6 +137,7 @@ export default function App() {
             <AppUpdateCheckOverlay />
             <InstallAppBanner />
           </Suspense>
+          <GlobalTooltip />
         </AuthProvider>
       </PrivateModeProvider>
     </ErrorBoundary>

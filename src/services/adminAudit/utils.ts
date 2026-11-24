@@ -4,10 +4,15 @@ import { authPrimary } from '../../firebase';
  * Coleta metadados detalhados do ambiente do navegador do cliente
  */
 export function getClientMetadata() {
-  let sessionId = sessionStorage.getItem('app_session_id');
-  if (!sessionId) {
-    sessionId = `sess_${Math.random().toString(36).substring(2, 10)}_${Date.now()}`;
-    sessionStorage.setItem('app_session_id', sessionId);
+  let sessionId: string | null = null;
+  try {
+    sessionId = sessionStorage.getItem('app_session_id');
+    if (!sessionId) {
+      sessionId = `sess_${Math.random().toString(36).substring(2, 10)}_${Date.now()}`;
+      sessionStorage.setItem('app_session_id', sessionId);
+    }
+  } catch (e) {
+    sessionId = `sess_fallback_${Date.now()}`;
   }
 
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';

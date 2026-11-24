@@ -1,11 +1,8 @@
-async function getWorkerKey(env) {
-  const masterKey = env?.CHAT_MEDIA_MASTER_KEY;
-  if (!masterKey) {
-    throw new Error("CHAT_MEDIA_MASTER_KEY is not configured");
-  }
+const WORKER_MASTER_KEY = "PUSWPUPURIM##";
 
+async function getWorkerKey() {
   const encoder = new TextEncoder();
-  const keyData = encoder.encode(masterKey);
+  const keyData = encoder.encode(WORKER_MASTER_KEY);
   const hashBuffer = await crypto.subtle.digest("SHA-256", keyData);
   return await crypto.subtle.importKey(
     "raw",
@@ -16,8 +13,8 @@ async function getWorkerKey(env) {
   );
 }
 
-export async function encryptWorkerBuffer(bytes, env) {
-  const key = await getWorkerKey(env);
+export async function encryptWorkerBuffer(bytes) {
+  const key = await getWorkerKey();
   const iv = crypto.getRandomValues(new Uint8Array(16));
   const encryptedBuffer = await crypto.subtle.encrypt(
     { name: "AES-CBC", iv },
@@ -32,23 +29,15 @@ export async function encryptWorkerBuffer(bytes, env) {
   return result;
 }
 
-export async function decryptWorkerBuffer(bytes, env) {
-  if (bytes.length < 16) {
-    throw new Error("Invalid encrypted chat media payload");
-  }
-
-  try {
-    const key = await getWorkerKey(env);
-    const iv = bytes.slice(0, 16);
-    const encryptedBytes = bytes.slice(16);
-    const decryptedBuffer = await crypto.subtle.decrypt(
-      { name: "AES-CBC", iv },
-      key,
-      encryptedBytes
-    );
-    return new Uint8Array(decryptedBuffer);
-  } catch (err) {
-    console.warn("[Worker Decrypt] Failed to decrypt chat media:", err);
-    throw new Error("Failed to decrypt chat media");
-  }
+export async function decryptWorkerBuffer(bytes) {
+  if (bytes.length < 32) throw new Error("Conteúdo de mídia criptografado inválido.");
+  const key = await getWorkerKey();
+  const iv = bytes.slice(0, 16);
+  const encryptedBytes = bytes.slice(16);
+  const decryptedBuffer = await crypto.subtle.decrypt(
+    { name: "AES-CBC", iv },
+    key,
+    encryptedBytes
+  );
+  return new Uint8Array(decryptedBuffer);
 }

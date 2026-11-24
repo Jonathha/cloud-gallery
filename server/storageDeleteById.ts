@@ -1,12 +1,12 @@
 import { Response } from "express";
 import path from "path";
 import fs from "node:fs/promises";
-import { IMAGES_DIR } from "./storageHelpers";
+import { IMAGES_DIR, checkMediaOwnership } from "./storageHelpers";
 import { deleteSharesForImage } from "./shareService";
 import { deleteFromR2 } from "./r2Client";
 import { AuthenticatedRequest } from "./authMiddleware";
 import { getMetadataFromEnc, isEncBinary } from "./storageHelpersEnc";
-import { getFirestoreDocREST, deleteFirestoreDocREST } from "./firestoreREST";
+import { getFirestoreDocREST } from "./firestoreREST";
 
 export async function deleteImageById(req: AuthenticatedRequest, res: Response) {
   try {
@@ -26,25 +26,10 @@ export async function deleteImageById(req: AuthenticatedRequest, res: Response) 
       return res.status(401).json({ success: false, error: 'Unauthorized: Missing session token' });
     }
 
-    // LAYER 1: Validate ownership in Firestore (the source of truth) using the user's authentic token FIRST
-    let isOwnerOfMedia = false;
-    try {
-      const imgDoc = await getFirestoreDocREST('images', id, idToken);
-      if (imgDoc && imgDoc.userId === authUid) {
-        isOwnerOfMedia = true;
-      } else {
-        // Try protected media in 'media_keys'
-        const keyDoc = await getFirestoreDocREST('media_keys', id, idToken);
-        if (keyDoc && keyDoc.userId === authUid) {
-          isOwnerOfMedia = true;
-        }
-      }
-    } catch (dbErr) {
-      console.warn('[deleteImageById] Firestore REST verification failed/skipped:', dbErr);
-    }
-
-    if (!isOwnerOfMedia) {
-      return res.status(403).json({ success: false, error: 'Forbidden: Access denied to media owned by another user or media not found' });
+    // Validate ownership across local storage, R2, and Firestore
+    const ownership = await checkMediaOwnership(id, authUid, idToken);
+    if (ownership.exists && !ownership.allowed) {
+      return res.status(403).json({ success: false, error: 'Forbidden: Access denied to media owned by another user' });
     }
 
     // LAYER 2: Double check local file-level ownership if file exists
@@ -71,12 +56,13 @@ export async function deleteImageById(req: AuthenticatedRequest, res: Response) 
           fileUserId = jsonData?.userId;
         }
 
-        if (fileUserId && fileUserId !== authUid) {
+        if (fileUserId !== authUid) {
           return res.status(403).json({ success: false, error: 'Forbidden: Cannot delete file belonging to another user' });
         }
       }
     } catch (checkErr) {
-      console.warn('[deleteImageById] Local file check failed/skipped:', checkErr);
+      console.warn('[deleteImageById] Local file check failed:', checkErr);
+      return res.status(403).json({ success: false, error: 'Forbidden: Ownership could not be verified' });
     }
     
     // Proceed with deletion of file artifacts
@@ -99,14 +85,6 @@ export async function deleteImageById(req: AuthenticatedRequest, res: Response) 
       await deleteSharesForImage(id);
     } catch (sharePurgeErr) {
       console.error(`[StorageControllerUploadDelete] Failed to purge associated shares for image ${id}:`, sharePurgeErr);
-    }
-
-    // Clean up Firestore documents as a secondary safety measure
-    try {
-      await deleteFirestoreDocREST('images', id, idToken);
-      await deleteFirestoreDocREST('media_keys', id, idToken);
-    } catch (fsCleanErr) {
-      console.warn('[deleteImageById] Secondary Firestore doc cleanup warning:', fsCleanErr);
     }
 
     res.json({ success: true });

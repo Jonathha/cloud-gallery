@@ -1,15 +1,11 @@
 import React from 'react';
-import { doc, deleteDoc } from 'firebase/firestore';
-import { dbPrimary } from '../../firebase';
 import { DecryptedImage } from '../../types';
-import { getImageFromCache, removeImageFromCache, saveToTrash } from '../../utils/db';
-import { fetchAndUnpackImage } from '../../utils/fileCrypto';
-import { getApiUrl } from '../../utils/apiUrl';
 import { recordAuditEvent } from '../../services/adminAuditService';
+import { deleteSingleItem } from './selection/batchDeleteRunner';
+import { getImageFromCache } from '../../utils/db';
 
 export function useGalleryDeletion(
-  user: any,
-  images: DecryptedImage[],
+  user: any, _images: DecryptedImage[],
   setImages: React.Dispatch<React.SetStateAction<DecryptedImage[]>>,
   selectedImageId: string | null,
   setSelectedImage: React.Dispatch<React.SetStateAction<string | null>>,
@@ -21,72 +17,44 @@ export function useGalleryDeletion(
   const handleDelete = async () => {
     if (!imageToDelete) return;
     const id = imageToDelete;
-    
-    // 1. OPTIMISTIC UPDATE: Immediately update the UI state to remove the image,
-    // clear deletion target, and close active lightbox if this image is selected.
-    setImages(prev => prev.filter(img => img.id !== id));
-    if (selectedImageId === id) {
-      setSelectedImage(null);
-      setSelectedImageId(null);
-    }
+    const targetImg = _images.find(img => img.id === id);
+
+    // Remove da tela primeiro (com animação curta) para a interface responder na hora
+    const el = document.querySelector(`[data-media-id="${id}"]`) as HTMLElement | null;
+    const removeFromList = () => setImages(prev => prev.filter(img => img.id !== id));
+    const anim = el?.animate?.(
+      [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.85)' }],
+      { duration: 160, easing: 'ease-out', fill: 'forwards' }
+    );
+    if (anim) anim.finished.then(removeFromList, removeFromList);
+    else removeFromList();
+    if (selectedImageId === id) { setSelectedImage(null); setSelectedImageId(null); }
     setImageToDelete(null);
-    showToast('Imagem movida para a lixeira!', 'success');
+    showToast(targetImg?.isVideo ? 'Vídeo movido para a lixeira!' : 'Imagem movida para a lixeira!', 'success');
+
+    const cachedImg = await getImageFromCache(id).catch(() => undefined);
+    const mediaType = targetImg?.contentType || cachedImg?.contentType || (targetImg?.isVideo ? 'video' : undefined);
+    const fileSize = targetImg?.totalSize || cachedImg?.totalSize;
+    const fileName = (targetImg as any)?.fileName || (cachedImg as any)?.fileName;
+    const ok = await deleteSingleItem(id, user).catch(() => false);
     recordAuditEvent({
       type: 'file_delete',
+      action: 'file_delete',
       userId: user?.uid,
       userEmail: user?.email || '',
-      details: `Arquivo ID ${id} movido para a lixeira`
+      fileName,
+      mediaType,
+      fileSize,
+      itemCount: 1,
+      resourceId: id,
+      result: ok ? 'Arquivo movido para a lixeira com sucesso' : 'Falha ao mover arquivo para a lixeira',
+      status: ok ? 'success' : 'error',
+      details: `Arquivo ID ${id}${fileName ? ` (${fileName})` : ''} movido para a lixeira`
     });
-
-    // 2. BACKGROUND PROCESSING: Perform the storage, cache, and DB deletion non-blockingly
-    (async () => {
-      try {
-        let cachedImage = await getImageFromCache(id);
-        let skipTrash = false;
-        if (!cachedImage || !cachedImage.ciphertext) {
-          try {
-            const token = user ? await user.getIdToken() : undefined;
-            cachedImage = await fetchAndUnpackImage(id, token);
-          } catch (fetchErr) {
-            console.warn('Erro ao obter imagem para salvar na lixeira em segundo plano:', fetchErr);
-            skipTrash = true;
-          }
-        }
-
-        if (!skipTrash) {
-          if (cachedImage && cachedImage.ciphertext) {
-            await saveToTrash({
-              ...cachedImage,
-              createdAt: cachedImage.createdAt,
-              trashedAt: Date.now(),
-              deletedAt: Date.now()
-            });
-          }
-        }
-        
-        await removeImageFromCache(id);
-        
-        if (user && navigator.onLine) {
-          try {
-            await deleteDoc(doc(dbPrimary, 'images', id));
-          } catch (fsErr) {
-            console.warn('Erro ao deletar imagem do Firestore:', fsErr);
-          }
-          try {
-            const token = await user.getIdToken();
-            await fetch(getApiUrl(`/api/storage/image/${id}`), {
-              method: 'DELETE',
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-          } catch (serverErr) {
-            console.warn('Erro ao deletar do servidor local:', serverErr);
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao processar exclusão em segundo plano:', error);
-      }
-    })();
+    if (!ok) {
+      window.dispatchEvent(new CustomEvent('refresh-gallery-list'));
+      showToast('Não foi possível mover a mídia para a lixeira.', 'error');
+    }
   };
-
   return { handleDelete };
 }

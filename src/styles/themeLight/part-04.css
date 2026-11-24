@@ -1,0 +1,48 @@
+@layer base {
+  /* Text colors in Light mode */
+  html.theme-light .text-white,
+  html.theme-light .text-zinc-100,
+  html.theme-light .text-zinc-200 {
+    color: #0f172a !important;
+  }
+
+  html.theme-light .text-zinc-300,
+  html.theme-light .text-zinc-400 {
+    color: #334155 !important;
+  }
+
+  html.theme-light .text-zinc-500,
+  html.theme-light .text-zinc-600 {
+    color: #64748b !important;
+  }
+
+  html.theme-light .hover\:text-white:hover,
+  html.theme-light .hover\:text-zinc-100:hover,
+  html.theme-light .hover\:text-zinc-200:hover {
+    color: #0f172a !important;
+  }
+
+  /* Deep, readable colored text in Light mode for high contrast on light backgrounds */
+  html.theme-light .text-amber-200,
+  html.theme-light .text-amber-300,
+  html.theme-light .text-amber-400,
+  html.theme-light [class*="text-amber-200"],
+  html.theme-light [class*="text-amber-300"] {
+    color: #b45309 !important;
+  }
+
+  html.theme-light .text-emerald-200,
+  html.theme-light .text-emerald-300,
+  html.theme-light .text-emerald-400,
+  html.theme-light .text-green-400 {
+    color: #047857 !important;
+  }
+
+  html.theme-light .text-red-200,
+  html.theme-light .text-red-300,
+  html.theme-light .text-red-400,
+  html.theme-light .text-rose-300,
+  html.theme-light .text-rose-400 {
+    color: #b91c1c !important;
+  }
+}

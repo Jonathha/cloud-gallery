@@ -1,6 +1,7 @@
 import { jsonResponse } from "./workerHelpers.js";
 import { validateBanco1Token } from "./workerChat.js";
-import { getFirestoreDocREST, deleteFirestoreDocREST } from "./workerFirestoreREST.js";
+import { deleteUserMediaItem } from "./workerD1Storage.js";
+import { checkMediaOwnershipWorker } from "./workerStorageUtils.js";
 
 export async function handleDeleteImage(request, env) {
   const url = new URL(request.url);
@@ -16,53 +17,30 @@ export async function handleDeleteImage(request, env) {
   } catch (err) {
     return jsonResponse({ success: false, error: `Acesso não autorizado: ${err.message}` }, 401);
   }
-  const idToken = authHeader && authHeader.startsWith("Bearer ") ? authHeader.split("Bearer ")[1] : "";
-  if (!idToken) {
-    return jsonResponse({ success: false, error: "Acesso não autorizado: token de sessão ausente" }, 401);
-  }
-
-  // Validate ownership in Firestore (the source of truth) using the user's authentic token
-  let isOwnerOfMedia = false;
-  try {
-    const imgDoc = await getFirestoreDocREST('images', id, idToken);
-    if (imgDoc && imgDoc.userId === verifiedUser.uid) {
-      isOwnerOfMedia = true;
-    } else {
-      const keyDoc = await getFirestoreDocREST('media_keys', id, idToken);
-      if (keyDoc && keyDoc.userId === verifiedUser.uid) {
-        isOwnerOfMedia = true;
-      }
-    }
-  } catch (dbErr) {
-    console.warn('[handleDeleteImage] Firestore REST verification failed:', dbErr);
-  }
-
-  if (!isOwnerOfMedia) {
-    return jsonResponse({ success: false, error: "Acesso negado: você não tem permissão para excluir esta mídia." }, 403);
-  }
-
-  // Delete orphaned shares
-  const deterministicKey = `${verifiedUser.uid}_${id}`;
-  let shareIdToDelete = null;
-
-  try {
-    const activeDoc = await getFirestoreDocREST('active_shares', deterministicKey, idToken);
-    if (activeDoc && (activeDoc.shareId || activeDoc.id)) {
-      shareIdToDelete = activeDoc.shareId || activeDoc.id;
-    }
-  } catch (e) {
-    console.warn("[Worker] Failed to check active_shares in Firestore:", e);
-  }
 
   const bucket = env.R2 || env.CHAT_R2;
 
-  if (!shareIdToDelete && bucket) {
+  // Validate ownership across D1 and R2
+  const ownership = await checkMediaOwnershipWorker(id, verifiedUser.uid, authHeader, bucket, env.DB);
+  if (ownership.exists && !ownership.allowed) {
+    return jsonResponse({ success: false, error: "Acesso negado: você não tem permissão para excluir esta mídia." }, 403);
+  }
+
+  if (!ownership.exists) {
+    return jsonResponse({ success: true, message: "Mídia já excluída ou não encontrada." });
+  }
+
+  // Delete orphaned shares in R2 and D1
+  const deterministicKey = `${verifiedUser.uid}_${id}`;
+  let shareIdToDelete = null;
+
+  if (bucket) {
     try {
       const activeObj = await bucket.get(`active_shares/${deterministicKey}.json`);
       if (activeObj) {
         const activeData = await activeObj.json();
         if (activeData && (activeData.shareId || activeData.id)) {
-           shareIdToDelete = activeData.shareId || activeData.id;
+          shareIdToDelete = activeData.shareId || activeData.id;
         }
       }
     } catch (e) {
@@ -70,23 +48,14 @@ export async function handleDeleteImage(request, env) {
     }
   }
 
-  if (shareIdToDelete) {
-     if (bucket) {
-       try {
-         await bucket.delete(`shares/${shareIdToDelete}.json`);
-         await bucket.delete(`active_shares/${deterministicKey}.json`);
-       } catch (e) {
-         console.warn("[Worker R2] Failed deleting shares:", e);
-       }
-     }
-     try {
-       await deleteFirestoreDocREST('shares', shareIdToDelete, idToken);
-       await deleteFirestoreDocREST('active_shares', deterministicKey, idToken);
-     } catch (e) {
-       console.warn("[Worker Firestore] Failed deleting shares:", e);
-     }
+  if (shareIdToDelete && bucket) {
+    try {
+      await bucket.delete(`shares/${shareIdToDelete}.json`);
+      await bucket.delete(`active_shares/${deterministicKey}.json`);
+    } catch (e) {
+      console.warn("[Worker R2] Failed deleting shares:", e);
+    }
   }
-
 
   // Delete from R2
   if (bucket) {
@@ -97,16 +66,19 @@ export async function handleDeleteImage(request, env) {
       console.log(`[Worker R2] Deleted ${id} from R2`);
     } catch (r2DelErr) {
       console.error(`[Worker R2] Failed deleting ${id} from R2:`, r2DelErr);
+      // Keep the D1 record so the client can retry; otherwise the R2 object would be orphaned.
+      return jsonResponse({ success: false, error: "Falha ao excluir a mídia do armazenamento. Tente novamente." }, 500);
     }
   }
 
-  // Delete from Firestore (source of truth)
-  try {
-    await deleteFirestoreDocREST('images', id, idToken);
-    await deleteFirestoreDocREST('media_keys', id, idToken);
-    console.log(`[Worker Firestore] Deleted ${id} from Firestore`);
-  } catch (fsDelErr) {
-    console.warn(`[Worker Firestore] Failed deleting ${id} from Firestore:`, fsDelErr.message);
+  // Delete from D1 user metadata store
+  if (env.DB) {
+    try {
+      await deleteUserMediaItem(env.DB, verifiedUser.uid, id);
+      console.log(`[Worker D1] Deleted ${id} from user metadata store`);
+    } catch (d1DelErr) {
+      console.warn(`[Worker D1] Failed deleting ${id} from D1:`, d1DelErr);
+    }
   }
 
   return jsonResponse({ success: true });

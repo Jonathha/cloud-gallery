@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
-import { doc, getDoc } from "firebase/firestore";
-import { dbPrimary } from "../../firebase";
 import { signVaultData } from "../../utils/integrity";
+import { fetchVaultConfigApi } from "../../services/vaultApiService";
 
 export function useVaultLockout(user: any) {
   const [failedAttempts, setFailedAttempts] = useState(0);
@@ -26,10 +25,8 @@ export function useVaultLockout(user: any) {
       }
 
       try {
-        const userDocRef = doc(dbPrimary, "users", user.uid);
-        const userDoc = await getDoc(userDocRef);
-        if (userDoc.exists()) {
-          const serverData = userDoc.data();
+        const serverData = await fetchVaultConfigApi(user);
+        if (serverData) {
           const serverFailedAttempts = serverData.failedAttempts || 0;
           const serverLockedUntil = serverData.lockedUntil || null;
 
@@ -66,12 +63,12 @@ export function useVaultLockout(user: any) {
           }
         }
       } catch (err) {
-        console.warn("Falha de rede ao conectar com o servidor. Usando modo de segurança local.", err);
+        console.warn("Falha de rede ao conectar com o D1. Usando modo de segurança local.", err);
       }
     }
 
     syncAttemptsFromServer();
-  }, [user]);
+  }, [user?.uid]);
 
   useEffect(() => {
     let interval: any;
@@ -98,18 +95,12 @@ export function useVaultLockout(user: any) {
             } catch (e) {}
           }
         } else {
-          const diff = lockedUntil - now;
-          const seconds = Math.floor((diff / 1000) % 60);
-          const minutes = Math.floor((diff / 1000 / 60) % 60);
-          const hours = Math.floor((diff / 1000 / 60 / 60) % 24);
-          const days = Math.floor(diff / 1000 / 60 / 60 / 24);
-
-          if (days > 0) {
-            setRemainingTime(`${days}d ${hours}h ${minutes}m`);
-          } else if (hours > 0) {
-            setRemainingTime(`${hours}h ${minutes}m ${seconds}s`);
-          } else if (minutes > 0) {
-            setRemainingTime(`${minutes}m ${seconds}s`);
+          const diffMs = lockedUntil - now;
+          const totalSec = Math.ceil(diffMs / 1000);
+          const minutes = Math.floor(totalSec / 60);
+          const seconds = totalSec % 60;
+          if (minutes > 0) {
+            setRemainingTime(`${minutes}m ${seconds.toString().padStart(2, "0")}s`);
           } else {
             setRemainingTime(`${seconds}s`);
           }
@@ -118,16 +109,21 @@ export function useVaultLockout(user: any) {
 
       updateTimer();
       interval = setInterval(updateTimer, 1000);
+    } else {
+      setRemainingTime("");
     }
-    return () => clearInterval(interval);
-  }, [lockedUntil]);
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [lockedUntil, user]);
 
   return {
     failedAttempts,
-    setFailedAttempts,
     lockedUntil,
-    setLockedUntil,
     remainingTime,
-    setRemainingTime
+    setFailedAttempts,
+    setLockedUntil,
+    setRemainingTime,
   };
 }

@@ -4,7 +4,7 @@ import TrashModal from "../TrashModal";
 import SettingsModal from "../SettingsModal";
 import GalleryGrid from "./GalleryGrid";
 import AdminTab from "../AdminTab";
-import { RouletteTab } from "../roulette/RouletteTab";
+import ChatTab from "../ChatTab";
 import { DecryptedImage } from "../../types";
 
 interface GalleryActiveTabContentProps {
@@ -21,15 +21,15 @@ interface GalleryActiveTabContentProps {
   isExtraUnlocked: boolean;
   extraPassword: string | null;
   handleImageClick: (img: DecryptedImage, index: number, e: React.MouseEvent) => void;
-  fetchFullMedia: (img: DecryptedImage, isPreload?: boolean) => Promise<void>;
+  fetchFullMedia: (img: DecryptedImage, isPreload?: boolean, priority?: number) => Promise<void>;
   setImageToDelete: (id: string | null) => void;
   setImageToProtect: (id: string | null) => void;
   setIsUploaderOpen: (open: boolean) => void;
-  settingsSubTab?: 'security' | 'fakeVault' | 'storage' | 'repair' | 'account' | 'about' | 'menu' | 'news' | 'control';
-  setSettingsSubTab?: (tab: 'security' | 'fakeVault' | 'storage' | 'repair' | 'account' | 'about' | 'menu' | 'news' | 'control') => void;
+  settingsSubTab?: 'security' | 'storage' | 'repair' | 'account' | 'about' | 'menu' | 'news';
+  setSettingsSubTab?: (tab: 'security' | 'storage' | 'repair' | 'account' | 'about' | 'menu' | 'news') => void;
 }
 
-export default function GalleryActiveTabContent({
+function GalleryActiveTabContent({
   activeTab,
   setActiveTab,
   isSelectionMode,
@@ -115,6 +115,7 @@ export default function GalleryActiveTabContent({
           onOpenTrash={() => setActiveTab("trash")}
           isInline={true}
           initialTab={settingsSubTab}
+          onSubTabChange={setSettingsSubTab}
         />
       </>
     );
@@ -135,12 +136,12 @@ export default function GalleryActiveTabContent({
     );
   }
 
-  if (activeTab === "roulette") {
+  if (activeTab === "chat") {
     return (
       <>
         {galleryContent}
-        <RouletteTab
-          onBack={() => setActiveTab("gallery")}
+        <ChatTab
+          onBackToGallery={() => setActiveTab("gallery")}
         />
       </>
     );
@@ -148,3 +149,5 @@ export default function GalleryActiveTabContent({
 
   return galleryContent;
 }
+
+export default React.memo(GalleryActiveTabContent);

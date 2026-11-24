@@ -1,8 +1,11 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { isNativeApp } from "../utils/isNativeApp";
-import { Trash2, RefreshCw, Loader2 } from 'lucide-react';
+import { RefreshCw, Loader2 } from 'lucide-react';
+import TrashIcon from './icons/TrashIcon';
 import DeleteMediaModal from './DeleteMediaModal';
+import TrashPermanentDeleteModal from './trash/TrashPermanentDeleteModal';
+import TrashDeleteConfirmModal from './trash/TrashDeleteConfirmModal';
 import Toast from './Toast';
 import ExtraPasswordPrompt from './ExtraPasswordPrompt';
 import { useTrashLogic } from '../hooks/useTrashLogic';
@@ -44,14 +47,22 @@ export default function TrashModal({ isOpen, onClose, isInline, onLightboxToggle
         cancelText="Cancelar"
       />
 
-      <DeleteMediaModal
+      <TrashDeleteConfirmModal
         isOpen={t.isConfirmDeleteOpen}
         onClose={() => t.setIsConfirmDeleteOpen(false)}
         onConfirm={() => t.selectedImage && t.handleDeletePermanently(t.selectedImage)}
-        title="Excluir permanentemente?"
-        message="Esta mídia será excluída sem possibilidade de recuperação."
-        confirmText="Excluir"
-        cancelText="Cancelar"
+        isVideo={!!t.selectedImage?.isVideo}
+      />
+
+      <TrashPermanentDeleteModal
+        isOpen={t.deleteProgress.isDeleting}
+        current={t.deleteProgress.current}
+        total={t.deleteProgress.total}
+        isAll={t.deleteProgress.isAll}
+        failed={t.deleteProgress.failed}
+        photos={t.deleteProgress.photos}
+        videos={t.deleteProgress.videos}
+        finished={t.deleteProgress.finished}
       />
 
       {/* Header */}
@@ -77,12 +88,24 @@ export default function TrashModal({ isOpen, onClose, isInline, onLightboxToggle
               Cancelar
             </button>
           ) : t.images.length > 0 && (
-            <button
-              onClick={t.triggerEmptyTrash}
-              className="text-red-400 hover:text-red-300 text-sm font-medium px-4 py-2 rounded-xl hover:bg-red-500/10 transition-colors border border-transparent hover:border-red-500/10"
-            >
-              Esvaziar
-            </button>
+            <>
+              {t.images.length > 1 && (
+                <button
+                  onClick={() => t.handleRestoreAll(t.images.map((i) => i.id))}
+                  disabled={t.isRestoring || t.isDeleting}
+                  className="text-zinc-200 hover:text-white text-sm font-medium px-3 sm:px-4 py-2 rounded-xl hover:bg-white/5 transition-colors border border-transparent hover:border-white/5 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50"
+                >
+                  <RefreshCw size={15} />
+                  Restaurar tudo
+                </button>
+              )}
+              <button
+                onClick={t.triggerEmptyTrash}
+                className="text-red-400 hover:text-red-300 text-sm font-medium px-3 sm:px-4 py-2 rounded-xl hover:bg-red-500/10 transition-colors border border-transparent hover:border-red-500/10"
+              >
+                Esvaziar
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -95,8 +118,8 @@ export default function TrashModal({ isOpen, onClose, isInline, onLightboxToggle
           </div>
         ) : t.images.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-zinc-500 space-y-4 py-20">
-            <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center border border-white/5">
-              <Trash2 size={28} className="text-zinc-600" />
+            <div className="w-16 h-16 bg-zinc-900/90 rounded-full flex items-center justify-center border border-white/10 shadow-inner">
+              <TrashIcon size={28} className="text-zinc-400" />
             </div>
             <p className="text-base font-semibold text-white">A lixeira está vazia</p>
             <p className="text-sm text-center max-w-xs text-zinc-500">
@@ -108,6 +131,7 @@ export default function TrashModal({ isOpen, onClose, isInline, onLightboxToggle
             images={t.images}
             selectedIds={t.selectedIds}
             handleSelectImage={t.handleSelectImage}
+            onLongPress={t.handleLongPress}
             securityImageId={t.securityImageId}
             isExtraUnlocked={t.isExtraUnlocked}
             extraPassword={t.extraPassword}
@@ -122,7 +146,7 @@ export default function TrashModal({ isOpen, onClose, isInline, onLightboxToggle
             initial={{ y: 100 }}
             animate={{ y: 0 }}
             exit={{ y: 100 }}
-            className={`fixed bottom-0 left-0 right-0 bg-[#0a0a0a]/90 backdrop-blur-xl border-t border-white/10 p-4 sm:p-6 flex items-center justify-between z-[90] gap-4 ${isInline ? 'lg:left-64' : ''}`}
+            className={`fixed bottom-0 left-0 right-0 bg-[#0a0a0a]/90 backdrop-blur-xl border-t border-white/10 p-4 sm:p-6 flex items-center justify-between z-[110] gap-4 ${isInline ? 'lg:left-64 xl:left-72' : ''}`}
             style={{ paddingBottom: isApp ? '1rem' : 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
           >
             <div className="flex flex-col">
@@ -144,11 +168,11 @@ export default function TrashModal({ isOpen, onClose, isInline, onLightboxToggle
                 Restaurar
               </button>
               <button
-                onClick={() => t.setIsConfirmDeleteMultipleOpen(true)}
+                onClick={t.triggerDeleteMultiple}
                 disabled={t.isRestoring || t.isDeleting}
                 className="px-4 py-2.5 bg-red-500/10 text-red-500 font-bold rounded-xl flex items-center gap-2 hover:bg-red-500/20 transition-colors border border-red-500/20 disabled:opacity-50 text-sm"
               >
-                <Trash2 size={18} />
+                <TrashIcon size={18} />
                 Excluir
               </button>
             </div>

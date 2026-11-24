@@ -3,6 +3,7 @@ import { getRealFirebaseUser } from './shareUtils';
 import { removeLocalShareUrl } from './shareStorage';
 import { removeEncryptedShareRecovery } from './shareRecovery';
 import { deleteShareApi } from './shareApi';
+import { recordAuditEvent } from '../../services/adminAuditService';
 
 interface DeleteShareParams {
   shareIdToDelete?: string;
@@ -16,7 +17,7 @@ interface DeleteShareParams {
   setShowCreateForm: (val: boolean) => void;
 }
 
-export async function deleteShareLogic(params: DeleteShareParams) {
+export async function deleteShareLogic(params: DeleteShareParams): Promise<boolean> {
   const {
     shareIdToDelete,
     existingShare,
@@ -30,12 +31,12 @@ export async function deleteShareLogic(params: DeleteShareParams) {
   } = params;
 
   const targetShareId = shareIdToDelete || existingShare?.id;
-  if (!targetShareId) return;
+  if (!targetShareId) return false;
 
   const activeUser = getRealFirebaseUser(user);
   if (!activeUser) {
     setError("Usuário não autenticado no Firebase. Aguarde a sincronização.");
-    return;
+    return false;
   }
 
   setDeletingId(targetShareId);
@@ -52,6 +53,17 @@ export async function deleteShareLogic(params: DeleteShareParams) {
     removeLocalShareUrl(activeUser.uid, targetShareId);
     await removeEncryptedShareRecovery(activeUser.uid, targetShareId);
 
+    recordAuditEvent({
+      type: 'share_delete',
+      action: 'share_delete',
+      userId: activeUser.uid,
+      userEmail: activeUser.email || '',
+      resourceId: targetShareId,
+      result: 'Link de compartilhamento excluído e revogado com sucesso',
+      status: 'success',
+      details: `Link de compartilhamento ID: ${targetShareId} excluído`
+    });
+
     setExistingShares(prev => {
       const remaining = prev.filter(s => s.id !== targetShareId);
       if (remaining.length > 0) {
@@ -64,8 +76,10 @@ export async function deleteShareLogic(params: DeleteShareParams) {
       }
       return remaining;
     });
+    return true;
   } catch (err: any) {
     setError(err.message || 'Erro ao excluir link de compartilhamento.');
+    return false;
   } finally {
     setDeletingId(null);
   }

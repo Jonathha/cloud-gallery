@@ -17,7 +17,7 @@ export function useSettingsBackup(
     }
     setDownloading(true);
     try {
-      const cachedImages = await getAllImagesFromCache();
+      const cachedImages = await getAllImagesFromCache(user?.uid);
       if (cachedImages.length === 0) {
         showToast('Nenhuma imagem no cache', 'info');
         return;

@@ -1,7 +1,7 @@
 import { jsonResponse, corsHeaders } from "./workerHelpers.js";
 import { validateBanco1Token } from "./workerChat.js";
 import { isEncBinary, wrapJsonToEnc, getUserIdFromPayload } from "./workerStorageUtils.js";
-import { getFirestoreDocREST } from "./workerFirestoreREST.js";
+import { findUserMediaItem } from "./workerD1Storage.js";
 
 export async function handleGetImage(request, env) {
   const url = new URL(request.url);
@@ -18,25 +18,17 @@ export async function handleGetImage(request, env) {
     return jsonResponse({ success: false, error: `Acesso não autorizado: ${err.message}` }, 401);
   }
 
-  const idToken = authHeader && authHeader.startsWith("Bearer ") ? authHeader.split("Bearer ")[1] : "";
-  if (!idToken) {
-    return jsonResponse({ success: false, error: "Acesso não autorizado: token de sessão ausente" }, 401);
-  }
-
-  // Validate ownership in Firestore (the source of truth) using the user's authentic token
+  // Validate ownership in D1 first
   let isOwnerOfMedia = false;
-  try {
-    const imgDoc = await getFirestoreDocREST('images', id, idToken);
-    if (imgDoc && imgDoc.userId === verifiedUser.uid) {
-      isOwnerOfMedia = true;
-    } else {
-      const keyDoc = await getFirestoreDocREST('media_keys', id, idToken);
-      if (keyDoc && keyDoc.userId === verifiedUser.uid) {
+  if (env.DB) {
+    try {
+      const d1Item = await findUserMediaItem(env.DB, verifiedUser.uid, id);
+      if (d1Item) {
         isOwnerOfMedia = true;
       }
+    } catch (d1Err) {
+      console.warn('[handleGetImage] D1 verification check warning:', d1Err);
     }
-  } catch (dbErr) {
-    console.warn('[handleGetImage] Firestore REST verification failed:', dbErr);
   }
 
   // Try fetching file from R2 bucket
@@ -66,7 +58,7 @@ export async function handleGetImage(request, env) {
     return jsonResponse({ success: false, error: "Mídia não encontrada no armazenamento R2" }, 404);
   }
 
-  // Fallback ownership check from file payload if Firestore doc was inaccessible
+  // Fallback ownership check from file payload
   if (!isOwnerOfMedia) {
     const fileUserId = getUserIdFromPayload(buffer);
     if (fileUserId === verifiedUser.uid) {

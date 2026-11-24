@@ -1,131 +1,94 @@
-import { useState, useRef, useEffect } from "react";
+import { useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
-import { DecryptedImage } from "../../types";
-import { processAndSetImagesHelper } from "./useGalleryMediaLoader/processImages";
-import { executeBackgroundSyncHelper } from "./useGalleryMediaLoader/backgroundSync";
-import { loadImagesHelper } from "./useGalleryMediaLoader/fetchImages";
+import { useMediaLoaderState } from "./useGalleryMediaLoader/state/useMediaLoaderState";
+import { createMediaLoaderActions } from "./useGalleryMediaLoader/state/useMediaLoaderActions";
+import { decryptSingleThumbnail } from "./galleryDecryptHelper";
+import { getImageFromCache } from "../../utils/db";
+import { flushPendingServerDeletes } from "../../utils/pendingServerDeletes";
+import { dueFailedThumbnails, hasPendingRecovery, beginRecovery, endRecovery, subscribeFailedThumbnails } from "./decrypt/thumbnailRetry";
 
-export function useGalleryMediaLoader(
-  showToast: (msg: string, type?: "success" | "error") => void,
-  isExtraUnlocked?: boolean
-) {
-  const { user, cryptoKey, isAuthReady, extraPassword, securityImageId } = useAuth();
-  const [images, setImages] = useState<DecryptedImage[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<"synced" | "local-only" | "loading">("loading");
-  const [backgroundSyncing, setBackgroundSyncing] = useState(false);
-  const [backgroundSyncProgress, setBackgroundSyncProgress] = useState(0);
-
-  const decryptedCache = useRef<Map<string, string>>(new Map());
-
-  const [showDownloadPrompt, setShowDownloadPrompt] = useState(false);
-  const [cloudMediaCount, setCloudMediaCount] = useState(0);
-  const pendingSyncRef = useRef<{ items: any[]; token: string } | null>(null);
-
-  const [isMigrationNeeded, setIsMigrationNeeded] = useState(false);
-  const [migrationItems, setMigrationItems] = useState<any[]>([]);
-  const migrationDismissedRef = useRef(false);
+export function useGalleryMediaLoader(_showToast: (msg: string, type?: "success" | "error") => void, isExtraUnlocked?: boolean) {
+  const auth = useAuth();
+  const state = useMediaLoaderState();
+  const { executeBackgroundSync, loadImages } = createMediaLoaderActions(state, auth, isExtraUnlocked);
 
   const completeMigration = (cancelled?: boolean) => {
-    setIsMigrationNeeded(false);
-    setMigrationItems([]);
-    if (cancelled) {
-      migrationDismissedRef.current = true;
-    } else {
-      loadImages();
-    }
+    state.setIsMigrationNeeded(false); state.setMigrationItems([]);
+    if (cancelled) state.migrationDismissedRef.current = true; else loadImages();
   };
-
-  const processAndSetImages = async (imageList: any[], append = false) => {
-    await processAndSetImagesHelper(
-      imageList,
-      append,
-      securityImageId,
-      isExtraUnlocked,
-      extraPassword,
-      cryptoKey,
-      decryptedCache.current,
-      setImages,
-      setLoading
-    );
-  };
-
-  const executeBackgroundSync = async (itemsToSync: any[], token: string) => {
-    await executeBackgroundSyncHelper(
-      itemsToSync,
-      token,
-      setBackgroundSyncing,
-      setBackgroundSyncProgress,
-      setImages,
-      cryptoKey
-    );
-  };
-
   const onSelectFullDownload = () => {
-    localStorage.setItem('gallery_download_pref', 'full');
-    sessionStorage.setItem('gallery_download_pref', 'full');
-    setShowDownloadPrompt(false);
-    if (pendingSyncRef.current && pendingSyncRef.current.items.length > 0) {
-      executeBackgroundSync(pendingSyncRef.current.items, pendingSyncRef.current.token);
-    }
+    localStorage.setItem('gallery_download_pref', 'full'); sessionStorage.setItem('gallery_download_pref', 'full');
+    state.setShowDownloadPrompt(false);
+    if (state.pendingSyncRef.current?.items?.length) executeBackgroundSync(state.pendingSyncRef.current.items, state.pendingSyncRef.current.token);
   };
-
   const onSelectThumbnailsOnly = () => {
-    localStorage.setItem('gallery_download_pref', 'thumbnails_only');
-    sessionStorage.setItem('gallery_download_pref', 'thumbnails_only');
-    setShowDownloadPrompt(false);
-  };
-
-  const loadImages = async () => {
-    await loadImagesHelper({
-      user,
-      cryptoKey,
-      decryptedCache,
-      setImages,
-      setLoading,
-      setSyncStatus,
-      processAndSetImages,
-      migrationDismissedRef,
-      setIsMigrationNeeded,
-      setMigrationItems,
-      pendingSyncRef,
-      setCloudMediaCount,
-      setShowDownloadPrompt,
-      executeBackgroundSync,
-    });
+    localStorage.setItem('gallery_download_pref', 'thumbnails_only'); sessionStorage.setItem('gallery_download_pref', 'thumbnails_only');
+    state.setShowDownloadPrompt(false);
   };
 
   useEffect(() => {
-    if (!isAuthReady || !user || !cryptoKey) return;
+    if (!auth.isAuthReady || !auth.user || !auth.cryptoKey) return;
     loadImages();
-
-    const handleRefresh = () => {
-      console.log("[useGalleryMedia] Refresh event received, reloading images...");
-      loadImages();
-    };
-
+    const handleRefresh = () => loadImages();
+    const handleOnline = () => { flushPendingServerDeletes(auth.user).catch(() => {}); };
     window.addEventListener("refresh-gallery-list", handleRefresh);
+    window.addEventListener("online", handleOnline);
     return () => {
       window.removeEventListener("refresh-gallery-list", handleRefresh);
+      window.removeEventListener("online", handleOnline);
     };
-  }, [user, cryptoKey, isAuthReady, isExtraUnlocked, securityImageId, extraPassword]);
+  }, [auth.user, auth.cryptoKey, auth.isAuthReady, isExtraUnlocked, auth.securityImageId, auth.extraPassword]);
 
-  return {
-    images,
-    setImages,
-    loading,
-    setLoading,
-    syncStatus,
-    setSyncStatus,
-    backgroundSyncing,
-    backgroundSyncProgress,
-    loadImages,
-    isMigrationNeeded,
-    migrationItems,
-    completeMigration,
-    showDownloadPrompt,
-    cloudMediaCount,
-    onSelectFullDownload,
-    onSelectThumbnailsOnly,
-  };
+  // Recuperação individual de miniaturas que falharam (sem recarregar a galeria inteira)
+  useEffect(() => {
+    if (!auth.isAuthReady || !auth.user || !auth.cryptoKey) return;
+    let cancelled = false;
+    let running = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = (ms: number) => {
+      if (timer === undefined) timer = setTimeout(() => { timer = undefined; run(); }, ms);
+    };
+    const run = async () => {
+      if (cancelled || running || document.visibilityState === "hidden" || !navigator.onLine) return;
+      running = true;
+      try {
+        for (const id of dueFailedThumbnails()) {
+          if (cancelled) break;
+          beginRecovery(id);
+          let ok = false;
+          try {
+            const rec = await getImageFromCache(id);
+            if (!rec) ok = true;
+            else {
+              const res = await decryptSingleThumbnail(rec, auth.securityImageId, isExtraUnlocked, auth.extraPassword, auth.cryptoKey, state.decryptedCache.current);
+              if (res.url) {
+                ok = true;
+                if (!cancelled) state.setImages((prev) => prev.map((p) => (p.id === id && !p.url ? { ...p, ...res } : p)));
+              }
+            }
+          } catch {}
+          endRecovery(id, ok);
+          await new Promise((r) => setTimeout(r, 150 + Math.random() * 150));
+        }
+      } finally {
+        running = false;
+      }
+      if (!cancelled && hasPendingRecovery()) schedule(8000);
+    };
+    const unsubscribe = subscribeFailedThumbnails(() => schedule(3000));
+    const onVisible = () => { if (document.visibilityState === "visible") schedule(500); };
+    const onOnline = () => schedule(500);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onOnline);
+    if (hasPendingRecovery()) schedule(3000);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      unsubscribe();
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [auth.user, auth.cryptoKey, auth.isAuthReady, isExtraUnlocked, auth.securityImageId, auth.extraPassword]);
+
+  return { ...state, loadImages, completeMigration, onSelectFullDownload, onSelectThumbnailsOnly };
 }

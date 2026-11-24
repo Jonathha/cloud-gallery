@@ -27,6 +27,7 @@ interface Window {
   AndroidBridge?: AndroidBridge;
   GuarlyApp?: AndroidBridge;
   GuarlyNativeBridge?: AndroidBridge;
+  onBackPressed?: () => boolean;
   setAppVersion?: (version: string, code?: number) => void;
   updateAppVersion?: (version: string, code?: number) => void;
   setNativeAppVersion?: (version: string, code?: number) => void;

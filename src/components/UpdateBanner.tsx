@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { RefreshCw, X, Sparkles } from 'lucide-react';
 import { APP_VERSION } from '../constants';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { dbPrimary } from '../firebase';
-import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
+import { fetchAppConfigApi } from '../services/vaultApiService';
 
 export default function UpdateBanner() {
   const [show, setShow] = useState(false);
@@ -12,11 +10,13 @@ export default function UpdateBanner() {
   const [isDismissed, setIsDismissed] = useState(false);
 
   useEffect(() => {
-    // Listen for version updates in Firestore
-    const unsub = onSnapshot(doc(dbPrimary, 'config', 'app'), (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
-        const targetVersion = data.version || data.minVersion;
+    let active = true;
+
+    const checkConfig = async () => {
+      try {
+        const data = await fetchAppConfigApi();
+        if (!active || !data) return;
+        const targetVersion = data.version || data.latestVersion || data.minVersion;
         if (targetVersion) {
           setMinVersion(targetVersion);
           // If current version is less than required, show banner
@@ -24,12 +24,18 @@ export default function UpdateBanner() {
             setShow(true);
           }
         }
+      } catch (err) {
+        console.warn('UpdateBanner: Failed to fetch app config', err);
       }
-    }, (error) => {
-      console.warn('UpdateBanner: Config listener skipped due to Firestore quota/network state.', error);
-    });
+    };
 
-    return () => unsub();
+    checkConfig();
+    const interval = setInterval(checkConfig, 60000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   const isVersionOlder = (current: string, required: string) => {

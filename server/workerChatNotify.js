@@ -32,8 +32,7 @@ async function getGoogleAccessToken(env) {
 
   const data = await resp.json();
   if (!resp.ok) {
-    console.error("[getGoogleAccessToken] Google OAuth token request failed:", data);
-    throw new Error("Failed to get Google access token");
+    throw new Error(`Failed to get FCM token: ${JSON.stringify(data)}`);
   }
   return data.access_token;
 }
@@ -48,8 +47,7 @@ export async function handleChatNotify(request, env) {
     }
     
     const body = await request.json();
-    const { textToShow, userName, mediaType, textCiphertext, textIv, messageTime } = body;
-    const senderUserId = verifiedUser.uid;
+    const { textToShow, senderUserId, userName, mediaType, textCiphertext, textIv, messageTime } = body;
     
     const accessToken = await getGoogleAccessToken(env);
     
@@ -88,7 +86,7 @@ export async function handleChatNotify(request, env) {
           },
           data: {
             type: "chat_message",
-            userId: senderUserId,
+            userId: senderUserId || "",
             userName: userName || "",
             textCiphertext: textCiphertext || "",
             textIv: textIv || "",
@@ -131,9 +129,10 @@ export async function handleChatNotify(request, env) {
     return jsonResponse({ success: true, results });
   } catch (err) {
     console.error("[handleChatNotify] Detailed Error:", err, err.stack);
-    return jsonResponse({
-      success: false,
-      error: err.message || "Notification failed"
+    return jsonResponse({ 
+      success: false, 
+      error: err.message || "Notification failed",
+      stack: err.stack
     }, 500);
   }
 }

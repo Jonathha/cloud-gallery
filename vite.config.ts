@@ -18,8 +18,9 @@ export default defineConfig(({mode}) => {
       VitePWA({
         registerType: 'autoUpdate',
         injectRegister: 'auto',
-        includeAssets: ['icon.svg'],
+        includeAssets: ['icon.svg', 'chat-sw.js'],
         workbox: {
+          importScripts: ['/chat-sw.js'],
           skipWaiting: true,
           clientsClaim: true,
           cleanupOutdatedCaches: true,

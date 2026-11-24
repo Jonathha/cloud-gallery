@@ -54,7 +54,7 @@ export function ChangeVaultPinForm({
           placeholder="Senha atual do cofre"
           value={currentVaultPin}
           onChange={(e) => setCurrentVaultPin(e.target.value)}
-          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30"
         />
       </div>
 
@@ -73,7 +73,7 @@ export function ChangeVaultPinForm({
           placeholder="Nova senha do cofre"
           value={newVaultPin}
           onChange={(e) => setNewVaultPin(e.target.value)}
-          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30"
           minLength={6}
           maxLength={30}
         />
@@ -94,7 +94,7 @@ export function ChangeVaultPinForm({
           placeholder="Confirme a nova senha"
           value={confirmNewVaultPin}
           onChange={(e) => setConfirmNewVaultPin(e.target.value)}
-          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+          className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/30"
           minLength={6}
           maxLength={30}
         />
@@ -104,7 +104,7 @@ export function ChangeVaultPinForm({
         <button
           type="button"
           onClick={onCancel}
-          className="flex-1 py-2 px-4 bg-zinc-700/50 hover:bg-zinc-700 text-white font-medium rounded-xl transition-all"
+          className="flex-1 py-2 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium rounded-xl transition-all"
         >
           Cancelar
         </button>
@@ -112,7 +112,7 @@ export function ChangeVaultPinForm({
           type="button"
           onClick={handleChangeVaultPin as any}
           disabled={isUpdatingVaultPin}
-          className="flex-1 py-2 px-4 bg-teal-500 hover:bg-teal-400 text-white font-medium rounded-xl transition-all disabled:opacity-50"
+          className="flex-1 py-2 px-4 bg-white hover:bg-zinc-200 text-black font-semibold rounded-xl transition-all disabled:opacity-50"
         >
           {isUpdatingVaultPin ? 'Salvando...' : 'Salvar Nova Senha'}
         </button>

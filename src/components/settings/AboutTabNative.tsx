@@ -1,5 +1,6 @@
 import React from 'react';
-import { HardDrive, Trash2 } from 'lucide-react';
+import { HardDrive } from 'lucide-react';
+import TrashIcon from '../icons/TrashIcon';
 
 interface AboutTabNativeProps {
   isApkInCache: boolean;
@@ -60,9 +61,8 @@ export default function AboutTabNative({
                 onClick={handleDeleteFromCache}
                 disabled={isDeleting}
                 className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 disabled:opacity-50 rounded-xl transition-all cursor-pointer"
-                title="Excluir arquivo de atualização"
               >
-                <Trash2 size={16} />
+                <TrashIcon size={16} />
               </button>
             </div>
           )}

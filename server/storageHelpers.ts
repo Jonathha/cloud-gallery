@@ -87,7 +87,7 @@ export async function checkMediaOwnership(id: string, authUid: string, idToken?:
     if (buf && buf.length > 0) {
       if (isEncBinary(buf)) {
         const meta = getMetadataFromEnc(buf);
-        if (meta?.userId && meta.userId !== authUid) {
+        if (meta?.userId !== authUid) {
           return { exists: true, allowed: false };
         }
       }
@@ -100,7 +100,7 @@ export async function checkMediaOwnership(id: string, authUid: string, idToken?:
     const jsonStr = await fs.readFile(localPathJson, 'utf-8');
     if (jsonStr) {
       const parsed = JSON.parse(jsonStr);
-      if (parsed?.userId && parsed.userId !== authUid) {
+      if (parsed?.userId !== authUid) {
         return { exists: true, allowed: false };
       }
       return { exists: true, allowed: true };
@@ -113,7 +113,7 @@ export async function checkMediaOwnership(id: string, authUid: string, idToken?:
     if (r2DataEnc && r2DataEnc.length > 0) {
       if (isEncBinary(r2DataEnc)) {
         const meta = getMetadataFromEnc(r2DataEnc);
-        if (meta?.userId && meta.userId !== authUid) {
+        if (meta?.userId !== authUid) {
           return { exists: true, allowed: false };
         }
       }
@@ -125,7 +125,7 @@ export async function checkMediaOwnership(id: string, authUid: string, idToken?:
     const r2DataJson = await downloadFromR2(`images/${id}.json`);
     if (r2DataJson && r2DataJson.length > 0) {
       const parsed = JSON.parse(r2DataJson.toString('utf-8'));
-      if (parsed?.userId && parsed.userId !== authUid) {
+      if (parsed?.userId !== authUid) {
         return { exists: true, allowed: false };
       }
       return { exists: true, allowed: true };
@@ -136,18 +136,36 @@ export async function checkMediaOwnership(id: string, authUid: string, idToken?:
   if (idToken) {
     try {
       const { getFirestoreDocREST } = await import("./firestoreREST");
-      const imgDoc = await getFirestoreDocREST('images', id, idToken);
-      if (imgDoc && imgDoc.userId && imgDoc.userId !== authUid) {
-        return { exists: true, allowed: false };
+
+      // 3a. Check images collection
+      try {
+        const imgDoc = await getFirestoreDocREST('images', id, idToken);
+        if (imgDoc) {
+          if (imgDoc.userId && imgDoc.userId !== authUid) {
+            return { exists: true, allowed: false };
+          }
+          return { exists: true, allowed: true };
+        }
+      } catch (imgErr: any) {
+        if (imgErr?.message && !imgErr.message.includes('403') && !imgErr.message.includes('PERMISSION_DENIED')) {
+          throw imgErr;
+        }
       }
-      const keyDoc = await getFirestoreDocREST('media_keys', id, idToken);
-      if (keyDoc && keyDoc.userId && keyDoc.userId !== authUid) {
-        return { exists: true, allowed: false };
+
+      // 3b. Check media_keys collection (auxiliary/protected media)
+      try {
+        const keyDoc = await getFirestoreDocREST('media_keys', id, idToken);
+        if (keyDoc) {
+          if (keyDoc.userId && keyDoc.userId !== authUid) {
+            return { exists: true, allowed: false };
+          }
+          return { exists: true, allowed: true };
+        }
+      } catch (keyErr: any) {
+        // Ignored: non-protected media does not have a media_keys document
       }
     } catch (dbErr: any) {
-      if (dbErr?.message && (dbErr.message.includes('403') || dbErr.message.includes('PERMISSION_DENIED'))) {
-        return { exists: true, allowed: false };
-      }
+      // Ignored: Firestore check failures should not block deletion if user owns local/R2 media
     }
   }
 

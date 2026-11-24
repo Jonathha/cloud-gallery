@@ -41,29 +41,16 @@ export async function deriveKey(password: string, saltBase64: string, extractabl
 }
 
 export async function bytesToBase64(bytes: Uint8Array): Promise<string> {
-  const blob = new Blob([bytes], { type: 'application/octet-stream' });
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const dataUrl = reader.result as string;
-      const base64 = dataUrl.split(',')[1] || '';
-      resolve(base64);
-    };
-    reader.readAsDataURL(blob);
-  });
+  const CHUNK_SIZE = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    const chunk = bytes.subarray(i, i + CHUNK_SIZE);
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+  }
+  return btoa(binary);
 }
 
 export async function base64ToBytes(base64: string): Promise<Uint8Array> {
-  try {
-    const res = await fetch(`data:application/octet-stream;base64,${base64}`);
-    if (res.ok) {
-      const arrayBuf = await res.arrayBuffer();
-      return new Uint8Array(arrayBuf);
-    }
-  } catch (e) {
-    // Fall back to manual decoding if fetch is not supported/fails
-  }
-
   const binaryStr = atob(base64);
   const len = binaryStr.length;
   const bytes = new Uint8Array(len);
@@ -88,6 +75,21 @@ export async function encryptData(data: string, key: CryptoKey): Promise<{ ciphe
 
   return {
     ciphertext,
+    iv: ivBase64
+  };
+}
+
+export async function encryptDataRaw(data: string | Uint8Array, key: CryptoKey): Promise<{ rawCiphertext: ArrayBuffer, iv: string }> {
+  const iv = window.crypto.getRandomValues(new Uint8Array(IV_SIZE));
+  const dataBytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+  const rawCiphertext = await window.crypto.subtle.encrypt(
+    { name: ALGORITHM, iv: iv },
+    key,
+    dataBytes
+  );
+  const ivBase64 = await bytesToBase64(iv);
+  return {
+    rawCiphertext,
     iv: ivBase64
   };
 }

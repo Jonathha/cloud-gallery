@@ -6,7 +6,7 @@ const DEFAULT_ADMIN_EMAILS = [
 
 export const PRIMARY_FIREBASE_API_KEY = "AIzaSyB66ZqvvC3-TZoqvOUqPusY2IGMitx5ZS8";
 
-export function isUserAdmin(email, env) {
+export function isUserAdmin(email, env, emailVerified) {
   if (!email) return false;
   const adminList = (env?.ADMIN_EMAILS || env?.ADMIN_EMAIL || "")
     .split(",")
@@ -58,6 +58,7 @@ export async function verifyFirebaseIdToken(idToken) {
       const user = {
         uid: u.localId,
         email: u.email || null,
+        email_verified: Boolean(u.emailVerified),
         displayName: u.displayName || null
       };
 

@@ -1,5 +1,5 @@
 import { validateBanco1Token } from "../workerChat.js";
-import { getFirestoreDocREST } from "../workerFirestoreREST.js";
+import { findUserMediaItem } from "../workerD1Storage.js";
 
 export async function authenticateShareRequest(request) {
   const authHeader = request?.headers?.get("Authorization");
@@ -14,18 +14,20 @@ export async function authenticateShareRequest(request) {
   return { verifiedUser, idToken };
 }
 
-export async function checkMediaOwnership(imageId, userId, idToken) {
-  try {
-    const imgDoc = await getFirestoreDocREST('images', imageId, idToken);
-    if (imgDoc && imgDoc.userId === userId) {
-      return true;
+export async function checkMediaOwnership(imageId, userId, idToken, env = null) {
+  // D1 Operational Storage Verification (Primary & Sole Database)
+  if (env) {
+    const db = env.DB || env.DATABASE || env.d1;
+    if (db) {
+      try {
+        const d1Item = await findUserMediaItem(db, userId, imageId);
+        if (d1Item) {
+          return true;
+        }
+      } catch (d1Err) {
+        console.warn('[checkMediaOwnership] D1 verification failed:', d1Err);
+      }
     }
-    const keyDoc = await getFirestoreDocREST('media_keys', imageId, idToken);
-    if (keyDoc && keyDoc.userId === userId) {
-      return true;
-    }
-  } catch (dbErr) {
-    console.warn('[checkMediaOwnership] Firestore REST verification failed:', dbErr);
   }
   return false;
 }

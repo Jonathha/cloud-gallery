@@ -27,23 +27,34 @@ export async function getImageById(req: AuthenticatedRequest, res: Response) {
 
     // LAYER 1: Validate ownership in Firestore (the source of truth) using the user's authentic token
     let isOwnerOfMedia = false;
+    let mediaExistsInFirestore = false;
     try {
       const imgDoc = await getFirestoreDocREST('images', id, idToken);
-      if (imgDoc && imgDoc.userId === authUid) {
-        isOwnerOfMedia = true;
+      if (imgDoc) {
+        mediaExistsInFirestore = true;
+        if (imgDoc.userId === authUid) {
+          isOwnerOfMedia = true;
+        }
       } else {
         // Try protected media in 'media_keys'
         const keyDoc = await getFirestoreDocREST('media_keys', id, idToken);
-        if (keyDoc && keyDoc.userId === authUid) {
-          isOwnerOfMedia = true;
+        if (keyDoc) {
+          mediaExistsInFirestore = true;
+          if (keyDoc.userId === authUid) {
+            isOwnerOfMedia = true;
+          }
         }
       }
     } catch (dbErr) {
       console.warn('[getImageById] Firestore REST verification failed/skipped:', dbErr);
     }
 
+    if (!mediaExistsInFirestore) {
+      return res.status(404).json({ success: false, error: 'Not Found: Mídia não encontrada' });
+    }
+
     if (!isOwnerOfMedia) {
-      return res.status(403).json({ success: false, error: 'Forbidden: Access denied to media owned by another user or media not found' });
+      return res.status(403).json({ success: false, error: 'Forbidden: Access denied to media owned by another user' });
     }
 
     const filePath = path.join(IMAGES_DIR, `${id}.enc`);

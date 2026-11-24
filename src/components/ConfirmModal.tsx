@@ -30,38 +30,40 @@ export default function ConfirmModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.18 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 select-none"
+          transition={{ duration: 0.15 }}
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 select-none"
         >
-          {/* Dimmed & Blurred Dark Backdrop Overlay */}
+          {/* Dimmed backdrop */}
           <div
             onClick={onClose}
-            className="absolute inset-0 bg-black/85 backdrop-blur-md transition-opacity"
+            className="absolute inset-0 bg-black/80 transition-opacity"
           />
 
-          {/* Native App Dialog Card */}
+          {/* Modern Modal Card */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.92, y: 12 }}
+            initial={{ opacity: 0, scale: 0.95, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.92, y: 12 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="relative w-full max-w-[340px] sm:max-w-[360px] bg-[#242427] border border-white/10 rounded-[28px] p-6 sm:p-7 shadow-2xl shadow-black/90 overflow-hidden text-left"
+            exit={{ opacity: 0, scale: 0.95, y: 8 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            className="relative w-full max-w-[340px] sm:max-w-md bg-[#18181b] border border-white/10 rounded-2xl p-5 sm:p-6 shadow-2xl shadow-black/95 overflow-hidden text-left"
           >
-            <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight leading-tight">
-              {title}
-            </h3>
+            <div className="space-y-1.5 px-0.5">
+              <h3 className="text-base sm:text-lg font-bold text-white tracking-tight leading-tight">
+                {title}
+              </h3>
 
-            <p className="text-zinc-300 text-sm sm:text-[15px] leading-relaxed mt-3 font-normal">
-              {message}
-            </p>
+              <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed font-normal">
+                {message}
+              </p>
+            </div>
 
-            {/* Bottom-right Action Buttons */}
-            <div className="flex items-center justify-end gap-2 sm:gap-3 w-full pt-7">
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2.5 pt-6 w-full">
               <button
                 id="confirm-modal-btn-cancel"
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 bg-transparent hover:bg-white/5 active:bg-white/10 text-zinc-300 hover:text-white font-semibold rounded-xl transition-all text-sm cursor-pointer"
+                className="flex-1 py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700/80 active:scale-[0.98] text-zinc-300 hover:text-white font-medium rounded-xl text-sm transition-all border border-white/5 cursor-pointer text-center"
               >
                 {cancelText}
               </button>
@@ -73,8 +75,10 @@ export default function ConfirmModal({
                   onConfirm();
                   onClose();
                 }}
-                className={`px-4 py-2 bg-transparent hover:bg-white/5 active:bg-white/10 font-bold rounded-xl transition-all text-sm cursor-pointer ${
-                  isDestructive ? 'text-rose-400 hover:text-rose-300' : 'text-white'
+                className={`flex-1 py-2.5 px-4 font-semibold rounded-xl text-sm transition-all active:scale-[0.98] cursor-pointer text-center shadow-md ${
+                  isDestructive
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/40'
+                    : 'bg-white hover:bg-zinc-200 text-black shadow-zinc-950/40'
                 }`}
               >
                 {confirmText}
@@ -86,4 +90,5 @@ export default function ConfirmModal({
     </AnimatePresence>
   );
 }
+
 

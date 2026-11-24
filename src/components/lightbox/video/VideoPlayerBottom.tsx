@@ -28,7 +28,6 @@ export function VideoPlayerBottom({ state, actions, seek }: Props) {
           type="button"
           onClick={actions.toggleFullscreen}
           className="p-2.5 text-white/80 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition-all cursor-pointer"
-          title="Tela cheia"
         >
           <Maximize2 size={22} />
         </button>
@@ -38,7 +37,6 @@ export function VideoPlayerBottom({ state, actions, seek }: Props) {
           type="button"
           onClick={actions.togglePip}
           className="p-2.5 text-white/80 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition-all cursor-pointer"
-          title="Picture-in-Picture"
         >
           <Scan size={22} />
         </button>
@@ -48,7 +46,6 @@ export function VideoPlayerBottom({ state, actions, seek }: Props) {
           type="button"
           onClick={actions.handleRotate}
           className="p-2.5 text-white/80 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition-all cursor-pointer"
-          title="Girar vídeo"
         >
           <RotateCw size={22} />
         </button>
@@ -58,7 +55,6 @@ export function VideoPlayerBottom({ state, actions, seek }: Props) {
           type="button"
           onClick={actions.lockControls}
           className="p-2.5 text-white/80 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition-all cursor-pointer"
-          title="Bloquear controles"
         >
           <Lock size={22} />
         </button>

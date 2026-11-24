@@ -1,9 +1,8 @@
 import { useEffect } from 'react';
 import { clearImageCache, getAllImagesFromCache, removeImageFromCache } from '../../utils/db';
-import { dbPrimary } from '../../firebase';
-import { doc, getDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { DecryptedImage } from './types';
+import { fetchVaultConfigApi } from '../../services/vaultApiService';
 
 export function useSettingsStorage(
   isOpen: boolean,
@@ -12,12 +11,13 @@ export function useSettingsStorage(
   setStorageUsage: (usage: { total: number; count: number }) => void,
   setCloudStorageUsed: (usage: number) => void,
   setClearing: (clearing: boolean) => void,
-  showToast: (message: string, type?: any) => void
+  showToast: (message: string, type?: any) => void,
+  isStorageActive: boolean = true
 ) {
   useEffect(() => {
     const calculateStorage = async () => {
       try {
-        const cachedImages = await getAllImagesFromCache();
+        const cachedImages = await getAllImagesFromCache(user?.uid);
         let totalBytes = 0;
         cachedImages.forEach(img => {
           if (img.ciphertext) {
@@ -37,10 +37,9 @@ export function useSettingsStorage(
     const loadCloudStorageBytes = async () => {
       if (!user) return;
       try {
-        const userDocRef = doc(dbPrimary, 'users', user.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-          const cloudUsage = userDocSnap.data().storageUsed || 0;
+        const config = await fetchVaultConfigApi(user);
+        if (config) {
+          const cloudUsage = config.usedStorage || 0;
           setCloudStorageUsed(cloudUsage);
         }
       } catch (err) {
@@ -48,11 +47,11 @@ export function useSettingsStorage(
       }
     };
     
-    if (isOpen) {
+    if (isOpen && isStorageActive) {
       calculateStorage();
       loadCloudStorageBytes();
     }
-  }, [isOpen, images, user]);
+  }, [isOpen, isStorageActive, images.length, user]);
 
   const handleRemoveFailedImages = async () => {
     setClearing(true);

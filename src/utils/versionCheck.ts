@@ -10,45 +10,53 @@ export function isVersionOlder(
 ): boolean {
   if (!reqV && !reqBuild) return false;
 
-  let versionIsOlder = false;
-  let buildIsOlder = false;
+  const cleanCur = currV ? currV.toLowerCase().replace(/^v/, '').trim() : '';
+  const cleanReq = reqV ? reqV.toLowerCase().replace(/^v/, '').trim() : '';
 
   // 1. Compare version name (semantic comparison)
-  if (currV && reqV) {
-    const cleanCur = currV.toLowerCase().replace(/^v/, '').trim();
-    const cleanReq = reqV.toLowerCase().replace(/^v/, '').trim();
+  if (cleanCur && cleanReq) {
+    const currParts = cleanCur.split('.').map((p) => parseInt(p, 10) || 0);
+    const reqParts = cleanReq.split('.').map((p) => parseInt(p, 10) || 0);
+    const maxLen = Math.max(currParts.length, reqParts.length);
 
-    if (cleanCur !== cleanReq) {
-      const currParts = cleanCur.split('.').map(Number);
-      const reqParts = cleanReq.split('.').map(Number);
-
-      for (let i = 0; i < Math.max(currParts.length, reqParts.length); i++) {
-        const c = currParts[i] || 0;
-        const r = reqParts[i] || 0;
-        if (c < r) {
-          versionIsOlder = true;
-          break;
-        }
-        if (c > r) {
-          versionIsOlder = false;
-          break;
-        }
+    for (let i = 0; i < maxLen; i++) {
+      const c = currParts[i] || 0;
+      const r = reqParts[i] || 0;
+      if (c < r) {
+        return true; // Running version is strictly older
+      }
+      if (c > r) {
+        return false; // Running version is strictly newer!
       }
     }
+
+    // Versions are semantically equal:
+    // Only compare build numbers if BOTH are explicitly present and distinct
+    if (currBuild && reqBuild) {
+      const curB = parseInt(currBuild, 10);
+      const reqB = parseInt(reqBuild, 10);
+      if (!isNaN(curB) && !isNaN(reqB)) {
+        return curB < reqB;
+      }
+    }
+
+    return false;
   }
 
-  // 2. Compare build number (numerical comparison)
+  // 2. Fallback to build number comparison if version strings were not both provided
   if (currBuild && reqBuild) {
-    const curB = Number(currBuild);
-    const reqB = Number(reqBuild);
+    const curB = parseInt(currBuild, 10);
+    const reqB = parseInt(reqBuild, 10);
     if (!isNaN(curB) && !isNaN(reqB)) {
-      if (curB < reqB) {
-        buildIsOlder = true;
-      }
+      return curB < reqB;
     }
   }
 
-  // An update is required if either the running version is older OR the running build is older
-  return versionIsOlder || buildIsOlder;
+  // If only reqV is provided and currV is completely missing
+  if (cleanReq && !cleanCur) {
+    return true;
+  }
+
+  return false;
 }
 

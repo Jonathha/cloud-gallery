@@ -8,9 +8,9 @@ import {
   Minimize,
   Share2,
   Download,
-  Trash2,
   Info,
 } from 'lucide-react';
+import TrashIcon from '../icons/TrashIcon';
 
 interface LightboxControlsProps {
   selectedImage: string | null;
@@ -61,7 +61,7 @@ export default function LightboxControls({
       transition={{ duration: 0.2 }}
       className="absolute inset-0 z-30 pointer-events-none flex flex-col justify-between"
     >
-      {/* Top Bar: Close button on left, Fit & Fullscreen on right */}
+      {/* Top Bar: Close button on left, Fit, Fullscreen & Delete on right */}
       <div className="w-full flex items-center justify-between px-4 pt-4 sm:pt-6 sm:px-6 pointer-events-auto bg-gradient-to-b from-black/80 to-transparent pb-4">
         {/* Left: Close / Back Button */}
         <button
@@ -72,7 +72,6 @@ export default function LightboxControls({
             onClose();
           }}
           className="p-2.5 text-white/90 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition-all cursor-pointer"
-          title="Fechar"
         >
           <ChevronLeft size={28} className="stroke-[2.2]" />
         </button>
@@ -87,7 +86,6 @@ export default function LightboxControls({
               setImageFit(imageFit === 'contain' ? 'cover' : 'contain');
             }}
             className="p-2.5 text-white/90 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition-all cursor-pointer"
-            title={imageFit === 'contain' ? 'Preencher Tela' : 'Ajustar à Tela'}
           >
             {imageFit === 'contain' ? <Maximize size={22} /> : <Minimize size={22} />}
           </button>
@@ -101,7 +99,6 @@ export default function LightboxControls({
                 onToggleFullscreen();
               }}
               className="p-2.5 text-white/90 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition-all cursor-pointer"
-              title={isFullscreen ? 'Sair da Tela Cheia' : 'Tela Cheia'}
             >
               {isFullscreen ? <Minimize2 size={22} /> : <Maximize2 size={22} />}
             </button>
@@ -110,7 +107,7 @@ export default function LightboxControls({
       </div>
 
       {/* Bottom Action Bar: Info, Share, Download, Delete */}
-      <div className="w-full bg-black/90 border-t border-white/10 px-8 py-4 flex items-center justify-around backdrop-blur-md pointer-events-auto mt-auto">
+      <div className="w-full px-8 py-4 pb-8 sm:pb-6 flex items-center justify-around pointer-events-auto mt-auto">
         {/* 1. Info */}
         {onOpenDetails && (
           <button
@@ -120,10 +117,9 @@ export default function LightboxControls({
               e.stopPropagation();
               onOpenDetails();
             }}
-            className="p-2.5 text-white/80 hover:text-white rounded-full hover:bg-white/10 transition-all active:scale-90 cursor-pointer"
-            title="Detalhes do Arquivo"
+            className="p-3 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)] hover:opacity-80 active:scale-90 transition-all cursor-pointer"
           >
-            <Info size={22} className="stroke-[1.8]" />
+            <Info size={24} className="stroke-[2]" />
           </button>
         )}
 
@@ -135,10 +131,9 @@ export default function LightboxControls({
             e.stopPropagation();
             setIsShareOpen(true);
           }}
-          className="p-2.5 text-white/80 hover:text-white rounded-full hover:bg-white/10 transition-all active:scale-90 cursor-pointer"
-          title="Compartilhar Imagem"
+          className="p-3 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)] hover:opacity-80 active:scale-90 transition-all cursor-pointer"
         >
-          <Share2 size={22} className="stroke-[1.8]" />
+          <Share2 size={24} className="stroke-[2]" />
         </button>
 
         {/* 3. Download */}
@@ -151,10 +146,9 @@ export default function LightboxControls({
               : `secure-image-${Date.now()}.${extension}`
           }
           onClick={(e) => e.stopPropagation()}
-          className="p-2.5 text-white/80 hover:text-white rounded-full hover:bg-white/10 transition-all active:scale-90 cursor-pointer"
-          title={selectedImageIsVideo ? 'Baixar Vídeo' : 'Baixar Imagem'}
+          className="p-3 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)] hover:opacity-80 active:scale-90 transition-all cursor-pointer"
         >
-          <Download size={22} className="stroke-[1.8]" />
+          <Download size={24} className="stroke-[2]" />
         </a>
 
         {/* 4. Delete */}
@@ -166,10 +160,9 @@ export default function LightboxControls({
               e.stopPropagation();
               onDelete();
             }}
-            className="p-2.5 text-white/80 hover:text-red-400 rounded-full hover:bg-red-500/10 transition-all active:scale-90 cursor-pointer"
-            title="Excluir Imagem"
+            className="p-3 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)] hover:text-red-400 active:scale-90 transition-all cursor-pointer"
           >
-            <Trash2 size={22} className="stroke-[1.8]" />
+            <TrashIcon size={24} className="stroke-[2]" />
           </button>
         )}
       </div>

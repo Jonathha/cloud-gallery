@@ -19,7 +19,7 @@ export function useTrashOperations({
 }: UseTrashOperationsProps) {
   const { user } = useAuth();
 
-  const { handleRestore, handleRestoreMultiple } = useTrashRestore({
+  const { handleRestore, handleRestoreMultiple, handleRestoreAll } = useTrashRestore({
     user,
     setImages,
     selectedIds,
@@ -30,7 +30,7 @@ export function useTrashOperations({
     loadTrashItems,
   });
 
-  const { handleDeletePermanently, handleDeleteMultiple, handleEmptyTrash } = useTrashDelete({
+  const { handleDeletePermanently, handleDeleteMultiple, handleEmptyTrash, deleteProgress } = useTrashDelete({
     user,
     images,
     setImages,
@@ -48,8 +48,10 @@ export function useTrashOperations({
   return {
     handleRestore,
     handleRestoreMultiple,
+    handleRestoreAll,
     handleDeletePermanently,
     handleDeleteMultiple,
     handleEmptyTrash,
+    deleteProgress,
   };
 }

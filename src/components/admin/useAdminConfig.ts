@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
-import { dbPrimary } from '../../firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-
+import { APP_VERSION } from '../../constants';
+import { fetchAppConfigApi, saveAppConfigApi } from '../../services/vaultApiService';
 import { recordAuditEvent } from '../../services/adminAuditService';
 
 export function useAdminConfig(
@@ -12,18 +11,24 @@ export function useAdminConfig(
   const { user } = useAuth();
   const isAdmin = user?.email === 'jogonesteterp@gmail.com';
 
-  const [version, setVersion] = useState('2.1');
-  const [buildNumber, setBuildNumber] = useState('210');
-  const [required, setRequired] = useState(true);
+  const [version, setVersion] = useState(APP_VERSION);
+  const [buildNumber, setBuildNumber] = useState('100');
+  const [required, setRequired] = useState(false);
   const [securityCode, setSecurityCode] = useState('');
+  const [apkUrl, setApkUrl] = useState('');
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const onBackRef = useRef(onBackToGallery);
+  onBackRef.current = onBackToGallery;
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+
   useEffect(() => {
     if (!isAdmin) {
-      if (onBackToGallery) {
-        onBackToGallery();
+      if (onBackRef.current) {
+        onBackRef.current();
       }
       return;
     }
@@ -37,29 +42,29 @@ export function useAdminConfig(
 
     async function loadConfig() {
       try {
-        const configRef = doc(dbPrimary, 'config', 'app');
-        const docSnap = await getDoc(configRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
+        const data = await fetchAppConfigApi();
+        if (data) {
           if (data.version !== undefined) setVersion(data.version);
+          else if (data.latestVersion !== undefined) setVersion(data.latestVersion);
           if (data.buildNumber !== undefined) setBuildNumber(data.buildNumber);
           if (data.required !== undefined) setRequired(!!data.required);
           if (data.securityCode !== undefined) setSecurityCode(data.securityCode || '');
+          if (data.apkUrl !== undefined) setApkUrl(data.apkUrl || '');
         }
       } catch (err) {
         console.error('Erro ao carregar configurações de atualização:', err);
-        showToast('Não foi possível carregar as configurações do banco.', 'error');
+        showToastRef.current('Não foi possível carregar as configurações do banco.', 'error');
       } finally {
         setLoading(false);
       }
     }
 
     loadConfig();
-  }, [isAdmin, onBackToGallery]);
+  }, [isAdmin]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isAdmin) {
+    if (!isAdmin || !user) {
       showToast('Acesso negado: você não tem permissão para esta ação.', 'error');
       return;
     }
@@ -76,14 +81,19 @@ export function useAdminConfig(
 
     setSaving(true);
     try {
-      const configRef = doc(dbPrimary, 'config', 'app');
-      await setDoc(configRef, {
+      const ok = await saveAppConfigApi(user, {
         version: version.trim(),
         minVersion: version.trim(), // back-compat
+        latestVersion: version.trim(),
         buildNumber: buildNumber.trim(),
         required,
-        securityCode: securityCode.trim()
-      }, { merge: true });
+        securityCode: securityCode.trim(),
+        apkUrl: apkUrl.trim()
+      });
+
+      if (!ok) {
+        throw new Error('Falha ao salvar configuração via API');
+      }
 
       showToast('Configurações de atualização salvas com sucesso!');
       recordAuditEvent({
@@ -110,6 +120,8 @@ export function useAdminConfig(
     setRequired,
     securityCode,
     setSecurityCode,
+    apkUrl,
+    setApkUrl,
     loading,
     saving,
     handleSave

@@ -1,7 +1,32 @@
-import React from "react";
-import { removeFromTrash, clearTrash } from "../../../utils/db";
+import React, { useState, useRef } from "react";
+import { removeFromTrash, removeManyFromTrash, getImageFromTrash } from "../../../utils/db";
 import { TrashImage } from "../../gallery/trashDecryptHelper";
 import { getApiUrl } from "../../../utils/apiUrl";
+import { getSafeAuthToken } from "../../../utils/safeAuthToken";
+import { recordAuditEvent } from "../../../services/adminAuditService";
+import { addPendingServerDelete } from "../../../utils/pendingServerDeletes";
+
+export interface PermanentDeleteProgress {
+  isDeleting: boolean;
+  current: number;
+  total: number;
+  isAll: boolean;
+  failed: number;
+  photos: number;
+  videos: number;
+  finished: boolean;
+}
+
+const EMPTY_PROGRESS: PermanentDeleteProgress = {
+  isDeleting: false,
+  current: 0,
+  total: 0,
+  isAll: false,
+  failed: 0,
+  photos: 0,
+  videos: 0,
+  finished: false,
+};
 
 interface UseTrashDeleteProps {
   user: any;
@@ -32,34 +57,32 @@ export function useTrashDelete({
   showToast,
   loadTrashItems,
 }: UseTrashDeleteProps) {
-  const deleteInternal = async (
-    id: string,
-    deleteDocRef?: any,
-    docRef?: any,
-    dbPrimaryRef?: any,
-    token?: string
-  ) => {
+  const [deleteProgress, setDeleteProgress] = useState<PermanentDeleteProgress>(EMPTY_PROGRESS);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const finishProgress = (failed: number) => {
+    setDeleteProgress((prev) => ({ ...prev, current: prev.total, failed, finished: true }));
+    clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(() => setDeleteProgress(EMPTY_PROGRESS), failed > 0 ? 2800 : 1400);
+  };
+
+  const deleteInternal = async (id: string, token?: string): Promise<boolean> => {
     await removeFromTrash(id);
-    if (user && navigator.onLine) {
-      if (token) {
-        try {
-          await fetch(getApiUrl(`/api/storage/image/${id}`), {
-            method: "DELETE",
-            headers: { "Authorization": `Bearer ${token}` }
-          });
-        } catch (err) {
-          console.warn(`Erro ao deletar ${id} do storage:`, err);
-        }
-      }
-      if (deleteDocRef && docRef && dbPrimaryRef) {
-        try {
-          await deleteDocRef(docRef(dbPrimaryRef, "media_keys", id));
-          await deleteDocRef(docRef(dbPrimaryRef, "images", id));
-        } catch (fsErr) {
-          console.warn(`Erro ao deletar metadados de ${id} no Firestore:`, fsErr);
-        }
+    let ok = false;
+    if (navigator.onLine) {
+      try {
+        const res = await fetch(getApiUrl(`/api/storage/image/${id}`), {
+          method: "DELETE",
+          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        });
+        ok = res.ok;
+      } catch (err) {
+        console.warn(`Erro ao deletar ${id} do storage:`, err);
       }
     }
+    // Se não chegou ao servidor, fica na fila para não voltar à galeria na próxima sincronização
+    if (!ok) addPendingServerDelete(user?.uid, id);
+    return ok;
   };
 
   const handleDeletePermanently = async (image: TrashImage) => {
@@ -69,21 +92,30 @@ export function useTrashDelete({
     setSelectedImage(null);
     setSelectedIds((prev) => prev.filter((i) => i !== id));
     setIsConfirmDeleteOpen(false);
-    showToast("Item excluído permanentemente.");
 
     (async () => {
       try {
-        let deleteDocRef, docRef, dbPrimaryRef;
-        if (user && navigator.onLine) {
-          const fs = await import("firebase/firestore");
-          deleteDocRef = fs.deleteDoc;
-          docRef = fs.doc;
-          const { dbPrimary } = await import("../../../firebase");
-          dbPrimaryRef = dbPrimary;
-        }
-        
-        const token = user ? await user.getIdToken() : undefined;
-        await deleteInternal(id, deleteDocRef, docRef, dbPrimaryRef, token);
+        const trashMeta = await getImageFromTrash(id).catch(() => undefined);
+        const token = await getSafeAuthToken(user);
+        const deletedOnServer = await deleteInternal(id, token);
+        if (!deletedOnServer) showToast("Não foi possível apagar do servidor agora. Vamos tentar novamente.", "error");
+        else showToast("Item excluído permanentemente.");
+        recordAuditEvent({
+          type: "trash_delete",
+          action: "trash_delete",
+          userId: user?.uid,
+          userEmail: user?.email || "",
+          fileName: (trashMeta as any)?.fileName,
+          mediaType: trashMeta?.contentType || (image.isVideo ? "video" : "image"),
+          fileSize: trashMeta?.totalSize,
+          itemCount: 1,
+          resourceId: id,
+          result: deletedOnServer
+            ? "Arquivo excluído permanentemente da lixeira e do armazenamento"
+            : "Arquivo excluído da lixeira; falha ao apagar do servidor",
+          status: deletedOnServer ? "success" : "error",
+          details: `Exclusão permanente da lixeira — Arquivo ID: ${id}`
+        });
       } catch (error) {
         console.error("Error deleting image permanently:", error);
         showToast("Erro ao processar exclusão no servidor.", "error");
@@ -98,97 +130,148 @@ export function useTrashDelete({
     if (selectedIds.length === 0) return;
     
     const idsToDelete = [...selectedIds];
+    const total = idsToDelete.length;
     const deletedSet = new Set(idsToDelete);
+    
+    const videos = images.filter((img) => deletedSet.has(img.id) && img.isVideo).length;
     
     setImages((prev) => prev.filter((img) => !deletedSet.has(img.id)));
     setSelectedIds([]);
     setIsConfirmDeleteMultipleOpen(false);
-    showToast(`${deletedSet.size} itens excluídos.`);
+
+    clearTimeout(resetTimer.current);
+    setDeleteProgress({
+      ...EMPTY_PROGRESS,
+      isDeleting: true,
+      total,
+      photos: total - videos,
+      videos,
+    });
 
     (async () => {
       setIsDeleting(true);
+      let completed = 0;
+      let failed = 0;
       try {
-        let deleteDocRef, docRef, dbPrimaryRef;
-        if (user && navigator.onLine) {
-          const fs = await import("firebase/firestore");
-          deleteDocRef = fs.deleteDoc;
-          docRef = fs.doc;
-          const { dbPrimary } = await import("../../../firebase");
-          dbPrimaryRef = dbPrimary;
-        }
-
-        const token = user ? await user.getIdToken() : undefined;
+        const token = await getSafeAuthToken(user);
         
-        await Promise.all(
-          idsToDelete.map(async (id) => {
-            try {
-              await deleteInternal(id, deleteDocRef, docRef, dbPrimaryRef, token);
-            } catch (e) {
-              console.error(`Failed to delete ${id} permanently`, e);
-            }
-          })
-        );
+        for (const id of idsToDelete) {
+          try {
+            if (!(await deleteInternal(id, token))) failed++;
+          } catch (e) {
+            console.error(`Failed to delete ${id} permanently`, e);
+            failed++;
+          }
+          completed++;
+          setDeleteProgress((prev) => ({ ...prev, current: completed }));
+        }
+        recordAuditEvent({
+          type: "trash_delete",
+          action: "trash_delete",
+          userId: user?.uid,
+          userEmail: user?.email || "",
+          itemCount: deletedSet.size,
+          resourceId: idsToDelete.slice(0, 5).join(", ") + (idsToDelete.length > 5 ? ` (+${idsToDelete.length - 5})` : ""),
+          result: failed > 0
+            ? `${deletedSet.size - failed} de ${deletedSet.size} item(ns) excluído(s) do servidor; ${failed} falharam`
+            : `${deletedSet.size} item(ns) excluído(s) permanentemente da lixeira`,
+          status: failed > 0 ? "error" : "success",
+          details: `Exclusão permanente em lote da lixeira: ${deletedSet.size} arquivo(s)`
+        });
+        if (failed > 0) showToast(`${failed} de ${total} não foram apagados do servidor.`, "error");
+        else showToast(`${deletedSet.size} itens excluídos permanentemente.`);
       } catch (error) {
         console.error("Error deleting multiple images:", error);
+        failed += total - completed;
         showToast("Erro ao processar exclusão em lote.", "error");
         if (loadTrashItems) {
           await loadTrashItems();
         }
       } finally {
         setIsDeleting(false);
+        finishProgress(failed);
       }
     })();
   };
 
   const handleEmptyTrash = async () => {
     const itemsToEmpty = [...images];
+    const total = itemsToEmpty.length;
+    
+    const videos = itemsToEmpty.filter((img) => img.isVideo).length;
     
     setImages([]);
     setSelectedIds([]);
     setIsConfirmEmptyOpen(false);
-    showToast("Lixeira esvaziada!");
+
+    clearTimeout(resetTimer.current);
+    setDeleteProgress({
+      ...EMPTY_PROGRESS,
+      isDeleting: true,
+      total,
+      isAll: true,
+      photos: total - videos,
+      videos,
+    });
 
     (async () => {
       setIsDeleting(true);
+      let completed = 0;
+      let failed = 0;
       try {
-        await clearTrash();
+        // Remove apenas os itens do usuário atual (a store é compartilhada entre contas no dispositivo)
+        await removeManyFromTrash(itemsToEmpty.map((item) => item.id));
 
-        if (user && navigator.onLine) {
-          const fs = await import("firebase/firestore");
-          const deleteDocRef = fs.deleteDoc;
-          const docRef = fs.doc;
-          const { dbPrimary } = await import("../../../firebase");
-          const dbPrimaryRef = dbPrimary;
-          const token = await user.getIdToken();
+        if (navigator.onLine) {
+          const token = await getSafeAuthToken(user);
 
-          await Promise.all(
-            itemsToEmpty.map(async (item) => {
-              try {
-                await fetch(getApiUrl(`/api/storage/image/${item.id}`), {
-                  method: "DELETE",
-                  headers: { "Authorization": `Bearer ${token}` }
-                });
-              } catch (e) {}
-              try {
-                await deleteDocRef(docRef(dbPrimaryRef, "media_keys", item.id));
-              } catch (e) {}
-              try {
-                await deleteDocRef(docRef(dbPrimaryRef, "images", item.id));
-              } catch (e) {}
-            })
-          );
+          for (const item of itemsToEmpty) {
+            let ok = false;
+            try {
+              const res = await fetch(getApiUrl(`/api/storage/image/${item.id}`), {
+                method: "DELETE",
+                headers: token ? { "Authorization": `Bearer ${token}` } : {}
+              });
+              ok = res.ok;
+            } catch (e) {}
+            if (!ok) {
+              failed++;
+              addPendingServerDelete(user?.uid, item.id);
+            }
+            completed++;
+            setDeleteProgress((prev) => ({ ...prev, current: completed }));
+          }
+        } else {
+          for (const item of itemsToEmpty) addPendingServerDelete(user?.uid, item.id);
+          failed = total;
         }
+        recordAuditEvent({
+          type: "trash_delete",
+          action: "trash_delete",
+          userId: user?.uid,
+          userEmail: user?.email || "",
+          itemCount: total,
+          result: failed > 0
+            ? `Lixeira esvaziada localmente; ${failed} de ${total} item(ns) não foram apagados do servidor`
+            : `Lixeira esvaziada permanentemente (${total} item(ns) removido(s))`,
+          status: failed > 0 ? "error" : "success",
+          details: `Esvaziamento completo da lixeira (${total} arquivo(s) excluído(s) permanentemente)`
+        });
+        if (failed > 0) showToast(`${failed} de ${total} não foram apagados do servidor.`, "error");
+        else showToast("Lixeira esvaziada com sucesso!");
       } catch (error) {
         console.error("Error emptying trash in background:", error);
+        failed += total - completed;
         showToast("Erro ao esvaziar lixeira no servidor.", "error");
         if (loadTrashItems) {
           await loadTrashItems();
         }
       } finally {
         setIsDeleting(false);
+        finishProgress(failed);
       }
     })();
   };
 
-  return { handleDeletePermanently, handleDeleteMultiple, handleEmptyTrash };
+  return { handleDeletePermanently, handleDeleteMultiple, handleEmptyTrash, deleteProgress };
 }

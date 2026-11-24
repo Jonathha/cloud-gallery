@@ -7,8 +7,10 @@
 
 export { 
   handleFindShare, 
+  handleListMyShares,
   handleCreateShare, 
   handleViewShare, 
   handleDeleteShare,
   isShareActive
 } from "./workerShare/index.js";
+

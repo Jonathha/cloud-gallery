@@ -1,43 +1,48 @@
-import { jsonResponse } from "./workerHelpers.js";
-import { encryptWorkerBuffer } from "./workerChatMediaHelpers.js";
+import { jsonResponse, corsHeaders } from "./workerHelpers.js";
+import { validateBanco1Token } from "./workerChatAuth.js";
+import { reserveAudioUploadSlot, releaseAudioUploadSlot } from "./chatGlobalD1.js";
+import { validateAudioUploadPayload } from "./workerChat/audioUploadValidation.js";
+import { persistAudioUpload } from "./workerChat/audioUploadStorage.js";
 
+/**
+ * Handles incoming chat audio uploads with reservation, validation, and storage
+ */
 export async function handleChatMediaUpload(request, env) {
+  let reservationId = null;
   try {
-    const body = await request.json();
-    const { fileBase64, fileName, contentType } = body;
-    if (!fileBase64 || !fileName || !contentType) {
-      return jsonResponse({ success: false, error: "Missing required chat file parameters" }, 400);
-    }
-    
-    let base64Data = fileBase64;
-    if (fileBase64.includes(";base64,")) {
-      base64Data = fileBase64.split(";base64,")[1];
-    }
-    
-    const binaryString = atob(base64Data);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    
-    const encryptedBytes = await encryptWorkerBuffer(bytes, env);
-    
-    const bucket = env.CHAT_R2 || env.R2;
-    if (!bucket) {
-      return jsonResponse({ success: false, error: "R2 bucket binding is required" }, 500);
+    const user = await validateBanco1Token(request.headers.get("Authorization"));
+    const reservation = await reserveAudioUploadSlot(user.uid, env);
+    reservationId = reservation.id;
+
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    const validation = validateAudioUploadPayload(request, bytes);
+    if (validation.error) {
+      await releaseAudioUploadSlot(reservationId, env);
+      return jsonResponse({ success: false, error: validation.error }, validation.status);
     }
 
-    await bucket.put(fileName, encryptedBytes, {
-      httpMetadata: { contentType: contentType }
-    });
-    console.log(`[Worker] Chat Media Uploaded directly to R2: ${fileName}`);
-
+    const { key, url } = await persistAudioUpload(bytes, validation.durationMs, user, reservationId, env);
     return jsonResponse({
       success: true,
-      url: `/api/chat/media/${fileName}`
+      key,
+      url,
+      durationMs: Math.round(validation.durationMs),
+      size: bytes.length
     });
   } catch (err) {
-    return jsonResponse({ success: false, error: err.message || "Failed to upload chat media" }, 500);
+    if (reservationId) await releaseAudioUploadSlot(reservationId, env).catch(() => {});
+    if (err && err.rateLimited) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: err.message,
+        rateLimited: true,
+        retryAfter: err.retryAfter,
+        limitType: err.limitType || "audio"
+      }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": String(err.retryAfter || 60) }
+      });
+    }
+    return jsonResponse({ success: false, error: err.message || "Falha no upload do áudio." }, 400);
   }
 }

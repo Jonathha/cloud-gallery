@@ -1,0 +1,118 @@
+/*
+ * Spinner da marca (Cloud Gallery) — anel com cauda em gradiente azul e ponta arredondada.
+ * Carregado direto pelo index.html para já aparecer antes do React montar.
+ * Só anima `transform` (compositor), então continua fluido mesmo com a thread principal ocupada.
+ */
+:root {
+  --gs-head: #8ab8ff;
+  --gs-tail: #2f6bff;
+  --gs-track: rgba(255, 255, 255, 0.09);
+}
+html.theme-light {
+  --gs-head: #1d4ed8;
+  --gs-tail: #7aa7ff;
+  --gs-track: rgba(15, 23, 42, 0.1);
+}
+
+.gs-spinner {
+  --gs-size: 28px;
+  --gs-t: 2.5px;
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  width: var(--gs-size);
+  height: var(--gs-size);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 var(--gs-t) var(--gs-track);
+}
+/* Para fundos claros fixos (ex.: botão branco de ação) */
+.gs-spinner.gs-spinner--ink,
+html.theme-light .gs-spinner.gs-spinner--ink {
+  --gs-head: #000;
+  --gs-tail: #000;
+  --gs-track: rgba(0, 0, 0, 0.18);
+}
+
+.gs-spinner__arc {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 70deg, var(--gs-tail) 215deg, var(--gs-head) 360deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--gs-t) - 0.5px), #000 calc(100% - var(--gs-t) + 0.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - var(--gs-t) - 0.5px), #000 calc(100% - var(--gs-t) + 0.5px));
+  /* easing suave: o giro "respira" em vez de ter velocidade constante */
+  animation: gs-rotate 1.05s cubic-bezier(0.5, 0.15, 0.5, 0.85) infinite;
+  will-change: transform;
+}
+/* ponta arredondada do arco */
+.gs-spinner__arc::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: calc(50% - var(--gs-t) / 2);
+  width: var(--gs-t);
+  height: var(--gs-t);
+  border-radius: 50%;
+  background: var(--gs-head);
+}
+
+@keyframes gs-rotate {
+  to { transform: rotate(360deg); }
+}
+@keyframes gs-breathe {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gs-spinner__arc { animation: gs-breathe 1.8s ease-in-out infinite; }
+}
+
+/* Tela de carregamento: anel + glifo da galeria (mesmo ícone do app) */
+.gs-loader {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  /* atraso curto + fade: carregamentos rápidos não piscam o loader */
+  animation: gs-fade-in 0.28s ease-out 0.15s both;
+}
+/* Quando o loader do index.html já está na tela, mantém continuidade (sem atraso) */
+.gs-loader.gs-loader--immediate { animation: none; }
+
+.gs-loader__mark {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+}
+.gs-loader__mark .gs-spinner {
+  --gs-size: 56px;
+  --gs-t: 3px;
+  position: absolute;
+  inset: 0;
+}
+.gs-loader__glyph {
+  width: 22px;
+  height: 22px;
+  color: var(--gs-head);
+  opacity: 0.6;
+}
+.gs-loader__sun {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: gs-sun 1.6s ease-in-out infinite;
+}
+@keyframes gs-sun {
+  0%, 100% { opacity: 0.45; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.12); }
+}
+@keyframes gs-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gs-loader__sun { animation: none; }
+}

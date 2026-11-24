@@ -1,0 +1,50 @@
+@layer base {
+  html.theme-light #install-app-banner button.bg-white {
+    background-color: #0f172a !important;
+    color: #ffffff !important;
+  }
+  html.theme-light #install-app-banner button.bg-white:hover {
+    background-color: #1e293b !important;
+  }
+
+  html.theme-light .bg-gradient-to-b.via-zinc-900.to-black {
+    background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.95), #ffffff, #f8fafc) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+  }
+
+  html.theme-light .bg-black\/60 {
+    background-color: #f1f5f9 !important;
+  }
+
+  /* Chat Global in Light mode */
+  html.theme-light #chat-messages-scroll-feed .bg-white.text-zinc-950 {
+    background-color: #0f172a !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.15) !important;
+  }
+  html.theme-light #chat-messages-scroll-feed .bg-white.text-zinc-950 p,
+  html.theme-light #chat-messages-scroll-feed .bg-white.text-zinc-950 a {
+    color: #ffffff !important;
+  }
+
+  html.theme-light #chat-messages-scroll-feed .bg-zinc-900 {
+    background-color: #ffffff !important;
+    border-color: #e2e8f0 !important;
+    color: #0f172a !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+  }
+  html.theme-light #chat-messages-scroll-feed .bg-zinc-900 p,
+  html.theme-light #chat-messages-scroll-feed .bg-zinc-900 a {
+    color: #0f172a !important;
+  }
+
+  html.theme-light #chat-tab-container textarea {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08) !important;
+  }
+  html.theme-light #chat-tab-container textarea::placeholder {
+    color: #94a3b8 !important;
+  }
+}

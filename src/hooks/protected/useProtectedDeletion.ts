@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { getAuxKeyFromCache } from "../../utils/db";
-import { doc, getDoc, deleteDoc } from "firebase/firestore";
-import { dbPrimary } from "../../firebase";
 import { fetchAndUnpackImage } from "../../utils/fileCrypto";
 import { getApiUrl } from "../../utils/apiUrl";
+import { getSafeAuthToken } from "../../utils/safeAuthToken";
+import { recordAuditEvent } from "../../services/adminAuditService";
+import { addPendingServerDelete } from "../../utils/pendingServerDeletes";
 
 interface UseProtectedDeletionProps {
   images: any[];
@@ -44,8 +45,12 @@ export function useProtectedDeletion({
       try {
         let fullImageJson: any = null;
         let skipTrash = false;
+        let token: string | undefined;
         try {
-          const token = user ? await user.getIdToken() : undefined;
+          token = await getSafeAuthToken(user);
+        } catch {}
+
+        try {
           fullImageJson = await fetchAndUnpackImage(id, token);
         } catch (err) {
           console.warn("Erro ao buscar imagem completa do servidor para mover para a lixeira:", err);
@@ -57,20 +62,13 @@ export function useProtectedDeletion({
         }
 
         if (!skipTrash && fullImageJson && fullImageJson.ciphertext) {
-          let auxKey = await getAuxKeyFromCache(id);
-          if (!auxKey && user && navigator.onLine) {
-            try {
-              const keyDoc = await getDoc(doc(dbPrimary, "media_keys", id));
-              if (keyDoc.exists()) {
-                auxKey = keyDoc.data().auxKey;
-              }
-            } catch (_) {}
-          }
+          const auxKey = await getAuxKeyFromCache(id);
 
-          const { saveToTrash } = await import("../../utils/db");
+          const { saveToTrash, removeImageFromCache, removeAuxKeyFromCache } = await import("../../utils/db");
 
           await saveToTrash({
-            id: fullImageJson.id,
+            id: fullImageJson.id || id,
+            userId: user?.uid || fullImageJson.userId,
             ciphertext: fullImageJson.ciphertext,
             iv: fullImageJson.iv,
             createdAt: fullImageJson.createdAt,
@@ -89,32 +87,50 @@ export function useProtectedDeletion({
             isProtected: true,
             auxKey: auxKey
           });
-        }
 
-        const { removeImageFromCache, removeAuxKeyFromCache } = await import("../../utils/db");
-        await removeImageFromCache(id);
-        await removeAuxKeyFromCache(id);
+          await removeImageFromCache(id);
+          await removeAuxKeyFromCache(id);
+          window.dispatchEvent(new CustomEvent("trash-updated"));
 
-        if (user && navigator.onLine) {
           try {
-            await deleteDoc(doc(dbPrimary, "media_keys", id));
-          } catch (fsErr) {
-            console.warn("Erro ao deletar chave auxiliar do Firestore:", fsErr);
+            const deletedList = JSON.parse(sessionStorage.getItem('recently_deleted_ids_v1') || '[]');
+            if (!deletedList.includes(id)) {
+              deletedList.push(id);
+              sessionStorage.setItem('recently_deleted_ids_v1', JSON.stringify(deletedList));
+            }
+          } catch {}
+
+          recordAuditEvent({
+            type: "file_delete",
+            action: "file_delete",
+            userId: user?.uid,
+            userEmail: user?.email || "",
+            fileName: fullImageJson.fileName,
+            mediaType: fullImageJson.contentType || "image/png",
+            fileSize: fullImageJson.totalSize || undefined,
+            itemCount: 1,
+            resourceId: id,
+            result: "Imagem protegida movida para a lixeira com sucesso",
+            status: "success",
+            details: `Imagem protegida ID ${id} movida para a lixeira`
+          });
+
+          let serverDeleted = false;
+          if (user && navigator.onLine) {
+            try {
+              const res = await fetch(getApiUrl(`/api/storage/image/${id}`), {
+                method: "DELETE",
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+              });
+              serverDeleted = res.ok;
+            } catch (serverErr) {
+              console.warn("Erro ao deletar do servidor:", serverErr);
+            }
           }
-          try {
-            await deleteDoc(doc(dbPrimary, "images", id));
-          } catch (fsErr) {
-            console.warn("Erro ao deletar imagem do Firestore:", fsErr);
-          }
-          try {
-            const token = user ? await user.getIdToken() : undefined;
-            await fetch(getApiUrl(`/api/storage/image/${id}`), {
-              method: "DELETE",
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-          } catch (serverErr) {
-            console.warn("Erro ao deletar do servidor local:", serverErr);
-          }
+          if (user && !serverDeleted) addPendingServerDelete(user.uid, id);
+        } else {
+          await loadProtectedImages();
+          setToast({ message: "Não foi possível mover a imagem protegida para a lixeira.", type: "error" });
         }
       } catch (error) {
         console.error("Erro ao processar exclusão de imagem protegida em segundo plano:", error);

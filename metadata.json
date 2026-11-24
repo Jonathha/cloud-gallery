@@ -1,8 +1,10 @@
 {
-  "name": "Remix Remix Remix: Cloud Gallery",
-  "description": "Armazenamento em nuvem com criptografia de ponta a ponta.",
+  "name": "Remix Remix GUARLYYYYYYYYL",
+  "description": "Imported from GitHub: Jonathha/GUARLYYYYYYYYL",
   "requestFramePermissions": [
     "camera"
   ],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -7,6 +7,7 @@ import {
 } from "firebase/auth";
 import { authPrimary } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
+import { recordAuditEvent } from "../services/adminAuditService";
 
 export function usePasswordChangeLogic(
   user: any,
@@ -48,6 +49,15 @@ export function usePasswordChangeLogic(
       await reauthenticateWithCredential(activeUser, credential);
       await updatePassword(activeUser, newPassword);
       await resetFailedAttempts();
+      recordAuditEvent({
+        type: "password_change",
+        action: "password_change",
+        userId: activeUser.uid,
+        userEmail: activeUser.email,
+        result: "Senha da conta alterada com sucesso",
+        status: "success",
+        details: "Alteração de senha de acesso da conta concluída"
+      }).catch(() => {});
       showToast("Senha alterada com sucesso.", "success");
       setIsChangingPassword(false);
       setCurrentPassword("");

@@ -19,7 +19,7 @@ try {
     const notificationTitle = payload.notification?.title || payload.data?.userName || 'Nova Mensagem';
     const notificationOptions = {
       body: payload.notification?.body || 'Você recebeu uma nova mensagem',
-      icon: '/icon.png',
+      icon: '/icon.svg',
       data: payload.data,
     };
   

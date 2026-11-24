@@ -4,6 +4,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface LightboxNavControlsProps {
   showControls: boolean;
+  hoverMode?: boolean;
+  hoverSide?: 'left' | 'right' | null;
   currentIndex: number;
   totalImages: number;
   onPrev: () => void;
@@ -12,17 +14,21 @@ interface LightboxNavControlsProps {
 
 export function LightboxNavControls({
   showControls,
+  hoverMode = false,
+  hoverSide = null,
   currentIndex,
   totalImages,
   onPrev,
   onNext
 }: LightboxNavControlsProps) {
+  const showPrev = hoverMode ? hoverSide === 'left' : showControls;
+  const showNext = hoverMode ? hoverSide === 'right' : showControls;
+
   return (
     <AnimatePresence>
-      {showControls && (
-        <>
-          {currentIndex > 0 && (
+          {showPrev && currentIndex > 0 && (
             <motion.button
+              key="lightbox-nav-prev"
               id="lightbox-nav-prev"
               type="button"
               initial={{ opacity: 0, x: -20 }}
@@ -39,8 +45,9 @@ export function LightboxNavControls({
               <ChevronLeft size={32} />
             </motion.button>
           )}
-          {currentIndex < totalImages - 1 && (
+          {showNext && currentIndex < totalImages - 1 && (
             <motion.button
+              key="lightbox-nav-next"
               id="lightbox-nav-next"
               type="button"
               initial={{ opacity: 0, x: 20 }}
@@ -57,8 +64,6 @@ export function LightboxNavControls({
               <ChevronRight size={32} />
             </motion.button>
           )}
-        </>
-      )}
     </AnimatePresence>
   );
 }

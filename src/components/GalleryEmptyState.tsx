@@ -12,7 +12,7 @@ export default function GalleryEmptyState({ setIsUploaderOpen }: GalleryEmptySta
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      className="text-center py-16 sm:py-24 text-zinc-500 space-y-5 px-4 flex flex-col items-center justify-center min-h-[45vh]"
+      className="text-center py-4 text-zinc-500 space-y-5 px-4 flex flex-col items-center justify-center select-none"
     >
       <div className="relative">
         <div className="w-20 h-20 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center shadow-lg">
@@ -35,7 +35,11 @@ export default function GalleryEmptyState({ setIsUploaderOpen }: GalleryEmptySta
         <span>Adicionar Primeira Foto</span>
       </button>
 
-      <div className="pt-1 flex items-center gap-1.5 text-xs text-zinc-500 font-normal">
+      <p className="hidden [@media(hover:hover)_and_(pointer:fine)]:block -mt-2 text-xs text-zinc-400">
+        ou arraste e solte fotos e vídeos nesta tela
+      </p>
+
+      <div className="pt-1 flex items-center gap-1.5 text-xs text-zinc-400 font-normal">
         <ShieldCheck size={13} className="text-emerald-400/90" />
         <span>Criptografia de ponta a ponta ativa</span>
       </div>

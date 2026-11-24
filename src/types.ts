@@ -1,5 +1,6 @@
 export interface EncryptedImage {
   id: string;
+  userId?: string;
   ciphertext?: string;
   iv?: string;
   createdAt: any;
@@ -16,9 +17,11 @@ export interface EncryptedImage {
 
 export interface DecryptedImage {
   id: string;
+  userId?: string;
   url: string;
   originalUrl?: string;
   failed?: boolean;
+  isMissing?: boolean;
   createdAt: number;
   isVideo?: boolean;
   contentType?: string;

@@ -1,62 +1,125 @@
-import React from 'react';
-import { Download, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import PublicMediaHeader from './publicShare/PublicMediaHeader';
+import PublicMediaViewer from './publicShare/PublicMediaViewer';
+import PublicMediaFooter from './publicShare/PublicMediaFooter';
+import PublicMediaDetailsModal from './publicShare/PublicMediaDetailsModal';
+import PublicMediaToast from './publicShare/PublicMediaToast';
 
 interface PublicMediaFrameProps {
-  /**
-   * Safe decrypted BLOB url target
-   */
   decryptedUrl: string | null;
-  /**
-   * If true, enables resource retrieval download buttons
-   */
   allowDownload: boolean;
-  /**
-   * Video content identifier
-   */
   isVideo: boolean;
-  /**
-   * Progress of chunk file sequence download
-   */
   isDownloadingChunks: boolean;
-  /**
-   * Active string download percentages or loading updates
-   */
   downloadProgress: string;
+  shareData?: any;
+  timeLeft?: number | null;
 }
 
-/**
- * PublicMediaFrame is a highly protected responsive media box.
- * Implements:
- * - Direct click overlay shields to block drag-and-drop or right-click saves
- * - Responsive video HTML players
- * - Sequential chunk loading indicator loops
- */
 export default function PublicMediaFrame({
   decryptedUrl,
   allowDownload,
   isVideo,
   isDownloadingChunks,
-  downloadProgress
+  downloadProgress,
+  shareData,
+  timeLeft,
 }: PublicMediaFrameProps) {
-  return (
-    <div id="media-frame-wrapper" className="min-h-screen bg-black flex flex-col items-center justify-center relative select-none">
-      
-      {/* Title Header */}
-      <header className="absolute top-0 inset-x-0 p-4 sm:p-5 flex justify-end items-center bg-gradient-to-b from-black/80 to-transparent z-40">
-        <div className="flex items-center gap-3">
-          {allowDownload && decryptedUrl && (
-            <a
-              id="btn-permit-download"
-              href={decryptedUrl}
-              download={isVideo ? `shared-video-${Date.now()}.mp4` : `shared-image-${Date.now()}.png`}
-              className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-bold hover:text-white rounded-xl text-xs transition-colors flex items-center gap-1.5"
-            >
-              <Download size={14} /> Download
-            </a>
-          )}
-        </div>
-      </header>
+  const [showControls, setShowControls] = useState(true);
+  const [imageFit, setImageFit] = useState<'contain' | 'cover'>('contain');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Fullscreen state listener
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((prev) => (prev === msg ? null : prev));
+    }, 2600);
+  };
+
+  const handleShareOrCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const currentUrl = window.location.href;
+    if (navigator.share && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: isVideo ? 'Vídeo compartilhado via Cloud Gallery' : 'Foto compartilhada via Cloud Gallery',
+          url: currentUrl,
+        });
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(currentUrl);
+      setCopied(true);
+      showToast('Link copiado para a área de transferência!');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      showToast('Erro ao copiar link.');
+    }
+  };
+
+  const handleBackgroundClick = (e: React.MouseEvent) => {
+    // Only toggle if clicked directly on backdrop or media wrapper, not buttons
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('a') || target.closest('#details-modal')) {
+      return;
+    }
+    setShowControls((prev) => !prev);
+  };
+
+  const formatCreationDate = (ts?: number) => {
+    if (!ts) return 'Recente';
+    try {
+      const d = new Date(ts);
+      return d.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return 'Recente';
+    }
+  };
+
+  const mediaTypeLabel = isVideo
+    ? (shareData?.contentType?.toUpperCase() || 'VÍDEO MP4')
+    : (shareData?.contentType?.toUpperCase() || 'IMAGEM');
+
+  return (
+    <div
+      ref={containerRef}
+      id="media-frame-wrapper"
+      onClick={handleBackgroundClick}
+      className="fixed inset-0 bg-black flex flex-col justify-between select-none overflow-hidden"
+    >
       {/* Dynamic CSS styles to prevent screen printing and block touch callbacks */}
       <style>{`
         @media print {
@@ -75,53 +138,51 @@ export default function PublicMediaFrame({
         }
       `}</style>
 
-      {/* Media Containment area */}
-      <div className="w-full max-w-full max-h-screen aspect-auto flex items-center justify-center p-4 pt-16 pb-12 relative overflow-hidden">
-        {decryptedUrl ? (
-          <div className="relative max-h-[85vh] max-w-[95vw] shadow-2xl rounded-2xl overflow-hidden border border-zinc-900 group bg-zinc-950 flex justify-center items-center">
-            
-            {isVideo ? (
-              <video 
-                id="decrypted-video-tag"
-                src={decryptedUrl} 
-                controls
-                autoPlay
-                playsInline
-                controlsList="nodownload"
-                onContextMenu={(e) => e.preventDefault()}
-                className="max-h-[80vh] max-w-full object-contain select-none rounded bg-black inline-block"
-                style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
-              />
-            ) : (
-              <img 
-                id="decrypted-img-tag"
-                src={decryptedUrl} 
-                alt="Shared Vault Vaulted Asset" 
-                className="max-h-[80vh] max-w-full object-contain pointer-events-none select-none rounded bg-zinc-950 inline-block"
-                draggable="false"
-                style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
-              />
-            )}
+      {/* Top Bar - Header idêntico ao app */}
+      <PublicMediaHeader
+        showControls={showControls}
+        isVideo={isVideo}
+        timeLeft={timeLeft}
+        imageFit={imageFit}
+        setImageFit={setImageFit}
+        isFullscreen={isFullscreen}
+        toggleFullscreen={toggleFullscreen}
+      />
 
-            {/* Strict anti-copy shield overlay */}
-            {!allowDownload && !isVideo && (
-              <div 
-                id="anti-copy-shield"
-                className="absolute inset-0 bg-transparent cursor-default pointer-events-auto select-none"
-                onContextMenu={(e) => e.preventDefault()}
-              />
-            )}
-          </div>
-        ) : isDownloadingChunks ? (
-          <div className="flex flex-col items-center justify-center text-center space-y-4">
-            <Loader2 className="w-12 h-12 text-white animate-spin" />
-            <p className="text-zinc-200 text-sm font-semibold">{downloadProgress}</p>
-          </div>
-        ) : (
-          <div className="text-zinc-500 text-sm">Nenhum conteúdo decodificado.</div>
-        )}
-      </div>
+      {/* Media Containment Area - Central Stage */}
+      <PublicMediaViewer
+        decryptedUrl={decryptedUrl}
+        isVideo={isVideo}
+        allowDownload={allowDownload}
+        imageFit={imageFit}
+        isDownloadingChunks={isDownloadingChunks}
+        downloadProgress={downloadProgress}
+      />
 
+      {/* Bottom Bar - Action Bar idêntica ao Lightbox do app */}
+      <PublicMediaFooter
+        showControls={showControls}
+        setIsDetailsOpen={setIsDetailsOpen}
+        copied={copied}
+        handleShareOrCopy={handleShareOrCopy}
+        allowDownload={allowDownload}
+        decryptedUrl={decryptedUrl}
+        isVideo={isVideo}
+        showToast={showToast}
+      />
+
+      {/* Modal de Detalhes da Mídia Compartilhada */}
+      <PublicMediaDetailsModal
+        isDetailsOpen={isDetailsOpen}
+        setIsDetailsOpen={setIsDetailsOpen}
+        mediaTypeLabel={mediaTypeLabel}
+        allowDownload={allowDownload}
+        shareData={shareData}
+        formatCreationDate={formatCreationDate}
+      />
+
+      {/* Subtle Toast Feedback */}
+      <PublicMediaToast toastMessage={toastMessage} />
     </div>
   );
 }

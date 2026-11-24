@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { useAppUpdate } from '../hooks/useAppUpdate';
+import { APP_VERSION } from '../constants';
 import { UpdatePromptView } from './update/UpdatePromptView';
 import { UpdateProgressView } from './update/UpdateProgressView';
 import { UpdateSuccessView } from './update/UpdateSuccessView';
@@ -24,7 +25,7 @@ export default function AppUpdateCheckOverlay() {
     return null;
   }
 
-  const currentRequiredVersion = appConfig?.version || '2.0';
+  const currentRequiredVersion = appConfig?.version || APP_VERSION;
   const isRequired = appConfig?.required !== false || isSecurityMismatch;
 
   return (
@@ -35,7 +36,6 @@ export default function AppUpdateCheckOverlay() {
           <button
             onClick={() => setIsDismissed(true)}
             className="absolute top-3.5 right-3.5 p-1.5 hover:bg-white/10 rounded-lg text-zinc-400 hover:text-white transition-colors cursor-pointer z-10"
-            title="Fechar"
           >
             <X size={18} />
           </button>

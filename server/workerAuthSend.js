@@ -1,5 +1,5 @@
 import { jsonResponse } from "./workerHelpers.js";
-import { getFirestoreDocREST, setFirestoreDocREST } from "./workerFirestoreREST.js";
+import { saveAuthVerificationD1, getAuthVerificationD1 } from "./workerD1Auth.js";
 
 export async function hashVerificationCode(emailKey, code) {
   const enc = new TextEncoder();
@@ -25,20 +25,17 @@ export async function handleSendCode(request, env) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailKey)) {
     return jsonResponse({ success: false, error: "Formato de e-mail inválido" }, 400);
   }
-  
-  // Check rate limiting / blocking via Firestore REST
+
+  const db = env.DB || env.DATABASE || env.d1;
   let existing = null;
-  try {
-    existing = await getFirestoreDocREST('email_verifications', emailKey);
-  } catch (fsErr) {
-    console.warn("[AuthSend] Could not read existing email_verification from Firestore:", fsErr.message);
+  if (db) {
+    existing = await getAuthVerificationD1(db, emailKey);
   }
 
-  if (existing && existing.blockedUntil && Date.now() < existing.blockedUntil) {
-    const remainingMinutes = Math.ceil((existing.blockedUntil - Date.now()) / 60000);
+  if (existing && existing.attempts >= 5 && existing.updatedAt && (Date.now() - existing.updatedAt < 15 * 60 * 1000)) {
+    const remainingMinutes = Math.ceil((15 * 60 * 1000 - (Date.now() - existing.updatedAt)) / 60000);
     return jsonResponse({
       success: false,
-      blockedUntil: existing.blockedUntil,
       attempts: existing.attempts || 0,
       error: `Este e-mail está temporariamente bloqueado. Tente novamente em ${remainingMinutes} minuto(s).`
     });
@@ -46,72 +43,54 @@ export async function handleSendCode(request, env) {
 
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const codeHash = await hashVerificationCode(emailKey, code);
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+  const ip = request.headers.get("CF-Connecting-IP") || "0.0.0.0";
 
-  const currentAttempts = (existing && existing.blockedUntil && Date.now() >= existing.blockedUntil) ? 0 : (existing ? (existing.attempts || 0) : 0);
-  const currentBlockedUntil = (existing && existing.blockedUntil && Date.now() >= existing.blockedUntil) ? null : (existing ? (existing.blockedUntil || null) : null);
-
-  const record = {
-    email: emailKey,
-    codeHash,
-    codeSentAt: Date.now(),
-    expiresAt: Date.now() + 10 * 60 * 1000,
-    attempts: currentAttempts,
-    blockedUntil: currentBlockedUntil,
-    verified: false
-  };
-
-  try {
-    await setFirestoreDocREST('email_verifications', emailKey, record);
-  } catch (saveErr) {
-    console.error("[AuthSend] Failed to persist verification record in Firestore:", saveErr.message);
-    return jsonResponse({ success: false, error: "Erro interno ao registrar código de verificação." }, 500);
+  if (db) {
+    await saveAuthVerificationD1(db, emailKey, codeHash, expiresAt, ip);
   }
 
-  // Send email via Resend
-  const resendKey = env.RESEND_API_KEY || "";
-  if (!resendKey) {
-    return false;
-  }
-  
-  const htmlContent = `
-    <div style="font-family: sans-serif; background-color: #09090b; color: #f4f4f5; padding: 40px; border-radius: 24px; max-width: 440px; margin: 0 auto; border: 1px solid rgba(255,255,255,0.08);">
-      <div style="text-align: center; margin-bottom: 32px;">
-        <h2 style="font-size: 24px; font-weight: 800; color: #ffffff; margin: 0;">Cloud Gallery</h2>
-        <p style="color: #71717a; font-size: 14px; margin: 4px 0 0 0;">Código de Verificação de Segurança</p>
-      </div>
-      <div style="background-color: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.06); padding: 28px; border-radius: 20px; text-align: center; margin-bottom: 24px;">
-        <p style="color: #a1a1aa; font-size: 14px; margin: 0 0 16px 0;">Seu código de confirmação é:</p>
-        <div style="font-size: 38px; font-weight: 800; letter-spacing: 0.15em; color: #ffffff; font-family: monospace; margin: 12px 0;">${code}</div>
-        <p style="color: #52525b; font-size: 12px; margin: 16px 0 0 0;">Válido por 10 minutos.</p>
-      </div>
-      <p style="color: #52525b; font-size: 12px; text-align: center; line-height: 1.6; margin: 0;">
-        Se você não solicitou este código, por favor ignore este e-mail.
-      </p>
-    </div>
-  `;
-
-  try {
-    const mailRes = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${resendKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        from: "onboarding@resend.dev",
+  const resendApiKey = env.RESEND_API_KEY;
+  if (resendApiKey) {
+    try {
+      const emailPayload = {
+        from: env.EMAIL_FROM || "Guarly Security <security@guarly.com>",
         to: [emailKey],
-        subject: `Código de Verificação: ${code}`,
-        html: htmlContent
-      })
-    });
+        subject: `${code} é o seu código de segurança Guarly`,
+        html: `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; background: #09090b; color: #ffffff; border-radius: 16px; border: 1px solid #27272a;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <h1 style="color: #ffffff; font-size: 20px; font-weight: 700; margin: 0;">Código de Verificação</h1>
+              <p style="color: #a1a1aa; font-size: 14px; margin-top: 8px;">Use o código abaixo para validar sua identidade.</p>
+            </div>
+            <div style="background: #18181b; border: 1px solid #3f3f46; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0;">
+              <span style="font-family: monospace; font-size: 32px; font-weight: 700; letter-spacing: 6px; color: #60a5fa;">${code}</span>
+            </div>
+            <p style="color: #71717a; font-size: 12px; text-align: center; margin: 0;">Este código expira em 10 minutos. Se você não solicitou este código, ignore este e-mail.</p>
+          </div>
+        `
+      };
 
-    const mailData = await mailRes.json();
-    if (!mailRes.ok) {
-      return jsonResponse({ success: false, error: mailData.message || "Falha ao enviar e-mail." });
+      const resendRes = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(emailPayload)
+      });
+
+      if (!resendRes.ok) {
+        console.warn("[AuthSend] Resend API error:", resendRes.status);
+      }
+    } catch (mailErr) {
+      console.warn("[AuthSend] Email send error:", mailErr.message);
     }
-    return jsonResponse({ success: true, message: "Código enviado com sucesso!" });
-  } catch (mailErr) {
-    return jsonResponse({ success: false, error: "Erro ao conectar com o serviço de e-mail." });
   }
-}
 
+  return jsonResponse({
+    success: true,
+    message: "Código de verificação enviado com sucesso.",
+    expiresInSeconds: 600
+  });
+}

@@ -1,10 +1,11 @@
 import React from 'react';
-import { Sparkles, Shield, RefreshCw } from 'lucide-react';
-import { getApiUrl } from '../../utils/apiUrl';
+import { Info, Shield } from 'lucide-react';
 import { APP_VERSION } from '../../constants';
 import { isNativeApp, isMobileDevice } from '../../utils/isNativeApp';
 import AboutTabNative from './AboutTabNative';
 import AboutTabWeb from './AboutTabWeb';
+import { useAppUpdateConfig } from '../../hooks/appUpdate/useAppUpdateConfig';
+import { resolveApkUrl } from '../../utils/apkUrl';
 
 interface AboutTabProps {
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -14,24 +15,7 @@ export default function AboutTab({ showToast }: AboutTabProps) {
   const [isApkInCache, setIsApkInCache] = React.useState(false);
   const [apkSize, setApkSize] = React.useState<string | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
-
-  const handleCheckUpdates = () => {
-    showToast('Buscando atualizações...');
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        if (registrations.length === 0) {
-          showToast('Você já está na versão mais recente!', 'info');
-        } else {
-          for (const registration of registrations) {
-            registration.update();
-          }
-          showToast('Verificação concluída. Se houver novidades, o app atualizará em breve.', 'info');
-        }
-      });
-    } else {
-      window.location.reload();
-    }
-  };
+  const { appConfig } = useAppUpdateConfig();
 
   React.useEffect(() => {
     const win = window as any;
@@ -122,9 +106,12 @@ export default function AboutTab({ showToast }: AboutTabProps) {
   };
 
   const handleInstallApp = () => {
+    const targetApkUrl = resolveApkUrl(appConfig?.apkUrl);
     const link = document.createElement('a');
-    link.href = getApiUrl('/api/update/download');
-    link.download = 'app.apk';
+    link.href = targetApkUrl;
+    link.download = 'Guarly.apk';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -132,16 +119,16 @@ export default function AboutTab({ showToast }: AboutTabProps) {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-3 mb-4">
           <div className="p-2 bg-white/10 rounded-xl text-white">
-            <Sparkles size={20} />
+            <Info size={20} />
           </div>
           <h3 className="text-lg font-semibold text-white">Sobre o App</h3>
         </div>
 
-        <div className="p-6 bg-zinc-900/50 border border-white/10 rounded-3xl space-y-6 text-center">
+        <div className="p-6 bg-zinc-900/50 border border-white/10 rounded-3xl space-y-5 text-center">
           <div className="flex justify-center">
             <div className="w-20 h-20 bg-white text-black rounded-[2rem] flex items-center justify-center shadow-2xl">
               <Shield size={40} strokeWidth={2.5} />
@@ -152,17 +139,10 @@ export default function AboutTab({ showToast }: AboutTabProps) {
             <p className="text-sm text-zinc-500 mt-1">Versão {APP_VERSION}</p>
           </div>
 
-          <div className="pt-4 space-y-3">
-            <button
-              onClick={handleCheckUpdates}
-              className="w-full py-4 bg-white text-black font-bold rounded-2xl hover:bg-zinc-200 active:scale-95 transition-all flex items-center justify-center gap-2"
-            >
-              <RefreshCw size={20} />
-              Verificar Atualizações
-            </button>
-            <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-bold">
+          <div className="pt-2">
+            <span className="inline-block px-3 py-1.5 bg-zinc-800/80 border border-white/5 rounded-full text-[11px] text-zinc-400 font-medium tracking-wide">
               Criptografia de Ponta a Ponta Ativa
-            </p>
+            </span>
           </div>
         </div>
       </div>

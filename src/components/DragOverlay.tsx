@@ -14,7 +14,7 @@ export default function DragOverlay({ isDraggingGlobal }: DragOverlayProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] bg-white/10 backdrop-blur-md flex items-center justify-center pointer-events-none"
+          className="fixed inset-0 z-[100] bg-white/10 backdrop-blur-[2px] flex items-center justify-center pointer-events-none"
         >
           <div className="bg-white text-black px-8 py-6 rounded-[2.5rem] shadow-2xl flex flex-col items-center gap-4 border border-white/20">
             <div className="w-16 h-16 bg-black text-white rounded-2xl flex items-center justify-center">

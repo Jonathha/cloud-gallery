@@ -1,10 +1,11 @@
 import { useEffect } from "react";
 import { User, onAuthStateChanged } from "firebase/auth";
-import { getDoc, doc } from "firebase/firestore";
-import { authPrimary, dbPrimary } from "../firebase";
+import { authPrimary } from "../firebase";
 import { checkForMigration } from "../utils/authMigration";
 import { recordUserAccess } from "../services/adminAuditService";
 import { signVaultData } from "../utils/integrity";
+import { isQuickAccessEnabled, getQuickAccessKey, isManuallyLocked } from "../utils/quickAccess";
+import { fetchVaultConfigApi } from "../services/vaultApiService";
 
 interface AuthInitializeProps {
   setUser: (user: User | null) => void;
@@ -30,7 +31,10 @@ export function useAuthInitialize({
   isAuthReady,
 }: AuthInitializeProps) {
   useEffect(() => {
-    const savedOfflineUser = localStorage.getItem("offline_user");
+    let savedOfflineUser: string | null = null;
+    try {
+      savedOfflineUser = localStorage.getItem("offline_user");
+    } catch (e) {}
     let initialUser: any = null;
 
     if (savedOfflineUser) {
@@ -38,13 +42,29 @@ export function useAuthInitialize({
         initialUser = JSON.parse(savedOfflineUser);
         setUser(initialUser);
 
-        const cachedVaultData = localStorage.getItem(
-          `vault_data_${initialUser.uid}`,
-        );
+        let cachedVaultData: string | null = null;
+        try {
+          cachedVaultData = localStorage.getItem(
+            `vault_data_${initialUser.uid}`,
+          );
+        } catch (e) {}
         if (cachedVaultData) {
           const data = JSON.parse(cachedVaultData);
           setNeedsSetup(false);
-          setOrDecryptExtraPassword(data.extraPassword, null);
+          if (isQuickAccessEnabled(initialUser.uid) && !isManuallyLocked(initialUser.uid)) {
+            getQuickAccessKey(initialUser.uid).then(async (quickKey) => {
+              if (quickKey) {
+                setCryptoKey(quickKey);
+                await setOrDecryptExtraPassword(data.extraPassword, quickKey);
+              } else {
+                await setOrDecryptExtraPassword(data.extraPassword, null);
+              }
+            }).catch(() => {
+              setOrDecryptExtraPassword(data.extraPassword, null);
+            });
+          } else {
+            setOrDecryptExtraPassword(data.extraPassword, null);
+          }
           setSecurityImageId(data.securityImageId || null);
           setIsAuthReady(true);
         }
@@ -79,17 +99,30 @@ export function useAuthInitialize({
           if (cachedData) {
             const data = JSON.parse(cachedData);
             setNeedsSetup(false);
-            await setOrDecryptExtraPassword(data.extraPassword, null);
+            if (isQuickAccessEnabled(currentUser.uid) && !isManuallyLocked(currentUser.uid)) {
+              try {
+                const quickKey = await getQuickAccessKey(currentUser.uid);
+                if (quickKey) {
+                  setCryptoKey(quickKey);
+                  await setOrDecryptExtraPassword(data.extraPassword, quickKey);
+                } else {
+                  await setOrDecryptExtraPassword(data.extraPassword, null);
+                }
+              } catch {
+                await setOrDecryptExtraPassword(data.extraPassword, null);
+              }
+            } else {
+              await setOrDecryptExtraPassword(data.extraPassword, null);
+            }
             setSecurityImageId(data.securityImageId || null);
 
-            // Sincronização em segundo plano com Firestore para atestar estado autoritativo de lockout
+            // Sincronização em segundo plano com D1 para atestar estado autoritativo de lockout
             if (navigator.onLine) {
-              getDoc(doc(dbPrimary, "users", currentUser.uid))
-                .then(async (userDoc) => {
-                  if (userDoc && userDoc.exists()) {
-                    const rData = userDoc.data();
-                    const rLockedUntil = rData.lockedUntil || null;
-                    const rFailedAttempts = rData.failedAttempts || 0;
+              fetchVaultConfigApi(currentUser)
+                .then(async (remoteData) => {
+                  if (remoteData && remoteData.salt) {
+                    const rLockedUntil = remoteData.lockedUntil || null;
+                    const rFailedAttempts = remoteData.failedAttempts || 0;
                     const now = Date.now();
                     const isRemoteLocked = rLockedUntil && now < rLockedUntil;
 
@@ -101,20 +134,41 @@ export function useAuthInitialize({
                     }
                   }
                 })
-                .catch((e) => console.warn("[AUTH_INIT_SYNC] Offline or error syncing lockout:", e));
+                .catch((e) => console.warn("[AUTH_INIT_SYNC] Offline or error syncing lockout from D1:", e));
             }
 
             setIsAuthReady(true);
           } else {
             setIsAuthReady(false);
             try {
-              const userDoc = await getDoc(doc(dbPrimary, "users", currentUser.uid));
+              const remoteData = await fetchVaultConfigApi(currentUser);
 
-              if (userDoc && userDoc.exists()) {
+              const hasRemoteVault = Boolean(
+                remoteData && (
+                  remoteData.vaultVersion === 2 ||
+                  remoteData.vaultVersion === 1 ||
+                  remoteData.opaqueRecord ||
+                  remoteData.encryptedVaultKey ||
+                  remoteData.verification ||
+                  remoteData.salt ||
+                  remoteData.hasMedia ||
+                  remoteData.needsPasswordRestore
+                )
+              );
+
+              if (hasRemoteVault) {
                 setNeedsSetup(false);
-                const data = userDoc.data();
-                await setOrDecryptExtraPassword(data.extraPassword, cryptoKey);
-                setSecurityImageId(data.securityImageId || null);
+                let restoredKey: CryptoKey | null = cryptoKey;
+                if (!restoredKey && isQuickAccessEnabled(currentUser.uid) && !isManuallyLocked(currentUser.uid)) {
+                  try {
+                    restoredKey = await getQuickAccessKey(currentUser.uid);
+                    if (restoredKey) {
+                      setCryptoKey(restoredKey);
+                    }
+                  } catch {}
+                }
+                await setOrDecryptExtraPassword(remoteData.extraPassword, restoredKey);
+                setSecurityImageId(remoteData.securityImageId || null);
                 let existingFailedAttempts = 0;
                 let existingLockedUntil: number | null = null;
                 const localItem = localStorage.getItem(`vault_data_${currentUser.uid}`);
@@ -126,25 +180,26 @@ export function useAuthInitialize({
                   } catch (e) {}
                 }
 
-                const finalFailedAttempts = Math.max(existingFailedAttempts, data.failedAttempts || 0);
+                const finalFailedAttempts = Math.max(existingFailedAttempts, remoteData.failedAttempts || 0);
                 const finalLockedUntil = (existingLockedUntil && existingLockedUntil > Date.now()) 
                   ? existingLockedUntil 
-                  : (data.lockedUntil || null);
+                  : (remoteData.lockedUntil || null);
 
                 const finalSignature = await signVaultData(currentUser.uid, finalFailedAttempts, finalLockedUntil);
 
                 localStorage.setItem(
                   `vault_data_${currentUser.uid}`,
                   JSON.stringify({
-                    salt: data.salt,
-                    verification: data.verification,
-                    encryptedVaultKey: data.encryptedVaultKey || null,
-                    keyWrappingVersion: data.keyWrappingVersion || null,
-                    encryptionMode: data.encryptionMode || (data.extraPassword ? 'custom_extra' : 'standard'),
-                    extraPassword: data.extraPassword,
-                    securityImageId: data.securityImageId,
-                    extraPasswordUpdatedAt: data.extraPasswordUpdatedAt || 0,
-                    securityImageIdUpdatedAt: data.securityImageIdUpdatedAt || 0,
+                    vaultVersion: remoteData.vaultVersion || 1,
+                    salt: remoteData.salt || null,
+                    verification: remoteData.verification || null,
+                    encryptedVaultKey: remoteData.encryptedVaultKey || null,
+                    keyWrappingVersion: remoteData.keyWrappingVersion || null,
+                    encryptionMode: remoteData.encryptionMode || (remoteData.extraPassword ? 'custom_extra' : 'standard'),
+                    extraPassword: remoteData.extraPassword,
+                    securityImageId: remoteData.securityImageId,
+                    extraPasswordUpdatedAt: remoteData.extraPasswordUpdatedAt || 0,
+                    securityImageIdUpdatedAt: remoteData.securityImageIdUpdatedAt || 0,
                     failedAttempts: finalFailedAttempts,
                     lockedUntil: finalLockedUntil,
                     integritySignature: finalSignature,
@@ -154,15 +209,8 @@ export function useAuthInitialize({
                 setNeedsSetup(true);
               }
             } catch (error: any) {
-              console.warn(
-                "Offline or error fetching user doc:",
-                error,
-              );
-              if (error.code === 'permission-denied' || error.code === 'not-found') {
-                setNeedsSetup(true);
-              } else {
-                setNeedsSetup(false);
-              }
+              console.warn("Offline or error fetching user vault config:", error);
+              setNeedsSetup(false);
             }
             setIsAuthReady(true);
           }

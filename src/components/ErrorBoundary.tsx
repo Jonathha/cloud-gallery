@@ -25,6 +25,19 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
+
+    // Após um deploy, uma aba/PWA antiga pede chunks (lazy) que não existem mais no servidor.
+    // Recarrega uma vez (com trava de 30s para evitar loop) para buscar a versão nova.
+    const msg = String(error?.message || '');
+    if (/Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|Unable to preload|ChunkLoadError/i.test(msg)) {
+      try {
+        const last = Number(sessionStorage.getItem('chunk_reload_at') || 0);
+        if (Date.now() - last > 30000) {
+          sessionStorage.setItem('chunk_reload_at', String(Date.now()));
+          window.location.reload();
+        }
+      } catch {}
+    }
   }
 
   public render() {

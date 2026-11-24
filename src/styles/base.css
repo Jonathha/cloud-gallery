@@ -1,0 +1,65 @@
+@layer base {
+  * {
+    -webkit-touch-callout: none; /* iOS Safari */
+    -webkit-user-select: none; /* Safari */
+    -khtml-user-select: none; /* Konqueror HTML */
+    -moz-user-select: none; /* Old versions of Firefox */
+    -ms-user-select: none; /* Internet Explorer/Edge */
+    user-select: none; /* Non-prefixed version, currently supported by Chrome, Edge, Opera and Firefox */
+  }
+
+  input, textarea, [contenteditable] {
+    -webkit-user-select: auto;
+    -ms-user-select: auto;
+    user-select: auto;
+  }
+
+  html, body {
+    -webkit-tap-highlight-color: transparent; /* Remove tap highlight on iOS */
+    font-family: var(--font-sans);
+    background-color: #000;
+    color: #fff;
+    overscroll-behavior: none;
+    overflow-x: hidden;
+  }
+
+  body.modal-open,
+  html.lightbox-open,
+  body.lightbox-open {
+    overflow: hidden !important;
+  }
+
+  html.lightbox-open,
+  html.lightbox-open body,
+  html.theme-light.lightbox-open,
+  html.theme-light.lightbox-open body {
+    background-color: #000000 !important;
+    color-scheme: dark !important;
+  }
+
+  #root {
+    overflow-x: hidden;
+    min-height: 100dvh;
+  }
+
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover, 
+  input:-webkit-autofill:focus, 
+  input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #000 inset !important;
+    -webkit-text-fill-color: white !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .grecaptcha-badge {
+    visibility: hidden !important;
+  }
+}

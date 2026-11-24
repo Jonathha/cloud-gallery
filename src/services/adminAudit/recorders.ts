@@ -54,8 +54,11 @@ export async function recordUserAccess(user?: { uid: string; email?: string | nu
       state.sessionEntryLogged = true;
       recordAuditEvent({
         type: 'system_entry',
+        action: 'system_entry',
         userId: uid,
         userEmail: email,
+        result: 'Sessão iniciada com sucesso',
+        status: 'success',
         details: `Sessão iniciada (${meta.browser} no ${meta.operatingSystem}, fuso: ${meta.timeZone})`
       });
     }
@@ -69,9 +72,23 @@ export async function recordUserAccess(user?: { uid: string; email?: string | nu
  */
 export async function recordAuditEvent(event: {
   type: AuditEventType;
+  action?: string;
   userId?: string;
   userEmail?: string;
   details: string;
+  fileName?: string;
+  fileSize?: number;
+  mediaType?: string;
+  itemCount?: number;
+  resourceId?: string;
+  result?: string;
+  status?: string;
+  method?: string;
+  targetUid?: string;
+  targetEmail?: string;
+  attemptNumber?: number;
+  maxAttempts?: number;
+  locked?: boolean;
 }) {
   try {
     const meta = getClientMetadata();
@@ -85,15 +102,30 @@ export async function recordAuditEvent(event: {
 
     const record: AuditEventRecord = {
       type: event.type,
+      action: event.action || event.type,
       userId,
       userEmail,
       timestamp,
       details: event.details,
       sessionId: meta.sessionId,
+      userAgent: meta.userAgent,
       platform: meta.platform,
       browser: meta.browser,
       operatingSystem: meta.operatingSystem,
-      anonymous: isAnon
+      anonymous: isAnon,
+      ...(event.fileName !== undefined ? { fileName: event.fileName } : {}),
+      ...(event.fileSize !== undefined ? { fileSize: event.fileSize } : {}),
+      ...(event.mediaType !== undefined ? { mediaType: event.mediaType } : {}),
+      ...(event.itemCount !== undefined ? { itemCount: event.itemCount } : {}),
+      ...(event.resourceId !== undefined ? { resourceId: event.resourceId } : {}),
+      ...(event.result !== undefined ? { result: event.result } : {}),
+      ...(event.status !== undefined ? { status: event.status } : {}),
+      ...(event.method !== undefined ? { method: event.method } : {}),
+      ...(event.targetUid !== undefined ? { targetUid: event.targetUid } : {}),
+      ...(event.targetEmail !== undefined ? { targetEmail: event.targetEmail } : {}),
+      ...(event.attemptNumber !== undefined ? { attemptNumber: event.attemptNumber } : {}),
+      ...(event.maxAttempts !== undefined ? { maxAttempts: event.maxAttempts } : {}),
+      ...(event.locked !== undefined ? { locked: event.locked } : {})
     };
 
     state.localAuditLogs.unshift(record);
@@ -119,6 +151,11 @@ export async function recordSecurityEvent(event: {
   module: string;
   reason: string;
   path?: string;
+  method?: string;
+  statusCode?: number;
+  ruleCode?: string;
+  actionTaken?: string;
+  detectionResult?: string;
   userId?: string;
   userEmail?: string;
   ip?: string;
@@ -146,10 +183,16 @@ export async function recordSecurityEvent(event: {
       path: event.path || '',
       ip: event.ip || '',
       sessionId: meta.sessionId,
+      userAgent: meta.userAgent,
       platform: meta.platform,
       browser: meta.browser,
       operatingSystem: meta.operatingSystem,
-      anonymous: isAnon
+      anonymous: isAnon,
+      ...(event.method !== undefined ? { method: event.method } : {}),
+      ...(event.statusCode !== undefined ? { statusCode: event.statusCode } : {}),
+      ...(event.ruleCode !== undefined ? { ruleCode: event.ruleCode } : {}),
+      ...(event.actionTaken !== undefined ? { actionTaken: event.actionTaken } : {}),
+      ...(event.detectionResult !== undefined ? { detectionResult: event.detectionResult } : {})
     };
 
     state.localSecurityEvents.unshift(record);

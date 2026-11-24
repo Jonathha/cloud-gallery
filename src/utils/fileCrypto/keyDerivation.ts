@@ -10,6 +10,22 @@ export async function generateVaultMasterKey(): Promise<CryptoKey> {
   return generateRandomKey();
 }
 
+export async function deriveKeyFromOpaqueExportKey(exportKeyBase64Url: string): Promise<CryptoKey> {
+  const binaryString = atob(exportKeyBase64Url.replace(/-/g, '+').replace(/_/g, '/'));
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', bytes);
+  return window.crypto.subtle.importKey(
+    'raw',
+    hashBuffer,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
 export async function wrapVaultKey(
   vmk: CryptoKey,
   kek: CryptoKey

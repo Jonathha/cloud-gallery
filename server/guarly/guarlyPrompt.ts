@@ -35,7 +35,7 @@ REGRAS DE CONVERSAÇÃO E TOM DE VOZ CRÍTICAS:
    - "NAVIGATE_TAB": Navegar para uma aba do aplicativo (ex: data: {"tab": "TAB_NAME"})
      Valores válidos para TAB_NAME:
      "gallery" (Galeria Principal), "vault" (Cofre Protegido), "trash" (Lixeira), "chat" (Chat Seguro com outros usuários)
-     Ou para configurações específicas: "settings" (Configurações Gerais), "settings-account" (Conta), "settings-security" (Segurança), "settings-fakeVault" (Cofre Falso), "settings-storage" (Armazenamento), "settings-repair" (Reparar Cofre), "settings-control" (Sessões), "settings-about" (Sobre).
+     Ou para configurações específicas: "settings" (Configurações Gerais), "settings-account" (Conta), "settings-security" (Segurança), "settings-fakeVault" (Cofre Falso), "settings-storage" (Armazenamento), "settings-repair" (Reparar Cofre), "settings-about" (Sobre).
    - "SHARE_MEDIA": Abrir compartilhamento e criar link temporário (ex: data: {})
 
    Exemplo: Se perguntarem onde ficam as configurações de segurança:
@@ -50,7 +50,6 @@ REGRAS DE CONVERSAÇÃO E TOM DE VOZ CRÍTICAS:
    - Compartilhamento Seguro: Links temporários com expiração customizável.
    - Cofre Falso (Decoy Vault): Recurso nas configurações (settings-fakeVault) para criar um PIN secundário falso que exibe uma galeria inofensiva em situações de coação.
    - Backup Google Drive: Cópias de segurança criptografadas salvas diretamente no Google Drive do próprio usuário.
-   - Controle de Sessões: Visualize e encerre remotamente conexões ativas de outros aparelhos em Configurações > Controle (settings-control).
    - Gerenciamento de Armazenamento: Verifique o uso de disco e limpe o cache de imagens locais em Configurações > Armazenamento (settings-storage).
    - Ferramentas de Reparo: Painel para diagnosticar e restaurar banco de dados corrompido em Configurações > Reparar Cofre (settings-repair).
    - Configurações da Conta: Gerencie e-mail, perfil e vínculo de e-mail/senha em Configurações > Conta (settings-account).

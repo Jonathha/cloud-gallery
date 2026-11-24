@@ -1,8 +1,8 @@
 import { jsonResponse } from "../workerHelpers.js";
 import { verifyFirebaseIdToken, extractBearerToken } from "./auth.js";
-import { writeLogsDocREST } from "./firestore.js";
 import { extractClientContext, buildUserAccessDoc } from "./logRecordUserAccess.js";
 import { buildAuditDoc, buildSecurityDoc } from "./logRecordAuditSecurity.js";
+import { saveSecurityLogD1 } from "../workerD1Logs.js";
 
 export async function handleRecordLog(request, env) {
   try {
@@ -15,28 +15,45 @@ export async function handleRecordLog(request, env) {
 
     const ctx = extractClientContext(request, body);
     const idToken = extractBearerToken(request, body);
-    const verifiedUser = idToken ? await verifyFirebaseIdToken(idToken) : null;
+    let verifiedUser = null;
+    if (idToken) {
+      try {
+        verifiedUser = await verifyFirebaseIdToken(idToken);
+      } catch (authErr) {
+        console.warn("[WorkerLogs] Token verification warning in logs:", authErr);
+      }
+    }
     const timestamp = Date.now();
+    const db = env.DB || env.DATABASE || env.d1;
 
+    let docData, docId;
     if (logType === "user_access") {
-      const { docData, docId } = buildUserAccessDoc(verifiedUser, data, ctx, timestamp);
-      await writeLogsDocREST("user_accesses", docData, docId, env);
-      return jsonResponse({ success: true, verified: !!verifiedUser });
+      const res = buildUserAccessDoc(verifiedUser, data, ctx, timestamp);
+      docData = res.docData;
+      docId = res.docId;
+    } else if (logType === "audit") {
+      docData = buildAuditDoc(verifiedUser, data, ctx, timestamp);
+      docId = `audit_${timestamp}_${Math.random().toString(36).slice(2, 8)}`;
+    } else if (logType === "security") {
+      docData = buildSecurityDoc(verifiedUser, data, ctx, timestamp);
+      docId = `sec_${timestamp}_${Math.random().toString(36).slice(2, 8)}`;
+    } else {
+      return jsonResponse({ success: false, error: "Tipo de log inválido." }, 400);
     }
 
-    if (logType === "audit") {
-      const docData = buildAuditDoc(verifiedUser, data, ctx, timestamp);
-      await writeLogsDocREST("audit_logs", docData, null, env);
-      return jsonResponse({ success: true, verified: !!verifiedUser });
+    if (db) {
+      await saveSecurityLogD1(db, {
+        id: docId,
+        userId: verifiedUser?.uid || data.userId || "anonymous",
+        eventType: logType,
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+        details: docData,
+        timestamp
+      });
     }
 
-    if (logType === "security") {
-      const docData = buildSecurityDoc(verifiedUser, data, ctx, timestamp);
-      await writeLogsDocREST("security_events", docData, null, env);
-      return jsonResponse({ success: true, verified: !!verifiedUser });
-    }
-
-    return jsonResponse({ success: false, error: "Tipo de log inválido." }, 400);
+    return jsonResponse({ success: true, verified: !!verifiedUser });
   } catch (err) {
     console.error("[WorkerLogs] Erro interno em handleRecordLog:", err);
     return jsonResponse({ success: false, error: "Erro interno ao salvar log: " + (err.message || String(err)) }, 500);

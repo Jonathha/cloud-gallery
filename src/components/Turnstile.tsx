@@ -9,6 +9,11 @@ interface TurnstileProps {
 export default function Turnstile({ sitekey, onChange, theme = "dark" }: TurnstileProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
+  const onChangeRef = useRef(onChange);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
     const scriptId = "cloudflare-turnstile-script";
@@ -21,20 +26,25 @@ export default function Turnstile({ sitekey, onChange, theme = "dark" }: Turnsti
         try {
           (window as any).turnstile.remove(widgetIdRef.current);
         } catch (e) {}
+        widgetIdRef.current = null;
       }
 
       try {
+        if (containerRef.current) {
+          containerRef.current.innerHTML = "";
+        }
         widgetIdRef.current = (window as any).turnstile.render(containerRef.current, {
           sitekey,
           theme,
           callback: (token: string) => {
-            onChange(token);
+            onChangeRef.current?.(token);
           },
           "expired-callback": () => {
-            onChange(null);
+            onChangeRef.current?.(null);
           },
-          "error-callback": () => {
-            onChange(null);
+          "error-callback": (err: any) => {
+            console.warn("Turnstile challenge error:", err);
+            onChangeRef.current?.(null);
           },
         });
       } catch (err) {
@@ -73,9 +83,15 @@ export default function Turnstile({ sitekey, onChange, theme = "dark" }: Turnsti
         try {
           (window as any).turnstile.remove(widgetIdRef.current);
         } catch (e) {}
+        widgetIdRef.current = null;
       }
     };
-  }, [sitekey, theme, onChange]);
+  }, [sitekey, theme]);
 
-  return <div ref={containerRef} className="flex justify-center" />;
+  return (
+    <div 
+      ref={containerRef} 
+      className="flex justify-center items-center min-h-[65px] w-full transition-opacity duration-300" 
+    />
+  );
 }

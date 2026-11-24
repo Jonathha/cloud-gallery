@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { UpdateState } from './types';
+import { APP_VERSION } from '../../constants';
 
 export function useAppUpdateNative() {
   const [runningVersionName, setRunningVersionName] = useState<string | null>(() => {
@@ -11,7 +12,7 @@ export function useAppUpdateNative() {
         return urlVersion;
       }
     }
-    return typeof window !== 'undefined' ? localStorage.getItem('app_version_name') : null;
+    return typeof window !== 'undefined' ? (localStorage.getItem('app_version_name') || APP_VERSION) : APP_VERSION;
   });
 
   const [runningBuildNumber, setRunningBuildNumber] = useState<string | null>(() => {

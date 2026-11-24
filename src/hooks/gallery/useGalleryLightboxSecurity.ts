@@ -1,68 +1,28 @@
 import React, { useState } from "react";
 import { DecryptedImage } from "../../types";
+import { submitExtraPassword } from "./lightbox/extraPasswordHandler";
 
 interface UseGalleryLightboxSecurityProps {
-  images: DecryptedImage[];
-  extraPassword: string | null;
-  resetFailedAttempts: () => Promise<void>;
+  images: DecryptedImage[]; extraPassword: string | null; resetFailedAttempts: () => Promise<void>;
   registerFailedAttempt: () => Promise<{ lockedUntil: number | string | null; failedAttempts?: number }>;
-  lockVault: () => void;
-  showToast: (message: string, type?: "success" | "error" | "info" | "warning") => void;
-  setIsExtraUnlocked: (val: boolean) => void;
-  setSelectedImage: (url: string | null) => void;
-  setSelectedImageId: (id: string | null) => void;
-  setShowControls: (show: boolean) => void;
+  lockVault: () => void; showToast: (message: string, type?: "success" | "error" | "info" | "warning") => void;
+  setIsExtraUnlocked: (val: boolean) => void; setSelectedImage: (url: string | null) => void;
+  setSelectedImageId: (id: string | null) => void; setShowControls: (show: boolean) => void;
 }
 
-export function useGalleryLightboxSecurity({
-  images,
-  extraPassword,
-  resetFailedAttempts,
-  registerFailedAttempt,
-  lockVault,
-  showToast,
-  setIsExtraUnlocked,
-  setSelectedImage,
-  setSelectedImageId,
-  setShowControls,
-}: UseGalleryLightboxSecurityProps) {
+export function useGalleryLightboxSecurity(props: UseGalleryLightboxSecurityProps) {
   const [extraPasswordInput, setExtraPasswordInput] = useState("");
   const [isPromptingExtra, setIsPromptingExtra] = useState<string | null>(null);
 
   const handleExtraPasswordSubmit = async (e?: React.FormEvent | React.KeyboardEvent) => {
     e?.preventDefault();
-    if (extraPasswordInput.trim() === extraPassword?.trim()) {
-      setIsExtraUnlocked(true);
-      await resetFailedAttempts();
-      const img = images.find((i) => i.id === isPromptingExtra);
-      if (img) {
-        setSelectedImage(img.url);
-        setSelectedImageId(img.id);
-        setShowControls(true);
-        const url = new URL(window.location.href);
-        url.searchParams.set("image", img.id);
-        window.history.replaceState({}, "", url);
-      }
-      setIsPromptingExtra(null);
-      setExtraPasswordInput("");
-    } else {
-      const { lockedUntil } = await registerFailedAttempt();
-      if (lockedUntil) {
-        showToast("Muitas tentativas falhas. Cofre bloqueado temporariamente.", "error");
-        setIsPromptingExtra(null);
-        setExtraPasswordInput("");
-        lockVault();
-      } else {
-        showToast("Senha extra incorreta", "error");
-      }
-    }
+    await submitExtraPassword({
+      input: extraPasswordInput, expected: props.extraPassword, isPromptingExtra, images: props.images,
+      setIsExtraUnlocked: props.setIsExtraUnlocked, resetFailedAttempts: props.resetFailedAttempts,
+      setSelectedImage: props.setSelectedImage, setSelectedImageId: props.setSelectedImageId,
+      setShowControls: props.setShowControls, setIsPromptingExtra, setInput: setExtraPasswordInput,
+      registerFailedAttempt: props.registerFailedAttempt, lockVault: props.lockVault, showToast: props.showToast
+    });
   };
-
-  return {
-    extraPasswordInput,
-    setExtraPasswordInput,
-    isPromptingExtra,
-    setIsPromptingExtra,
-    handleExtraPasswordSubmit,
-  };
+  return { extraPasswordInput, setExtraPasswordInput, isPromptingExtra, setIsPromptingExtra, handleExtraPasswordSubmit };
 }

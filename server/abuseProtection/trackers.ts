@@ -10,7 +10,6 @@ export const trackers: Record<ModuleType, Map<string, IpTrackingData>> = {
   auth: new Map<string, IpTrackingData>(),
   upload: new Map<string, IpTrackingData>(),
   chat: new Map<string, IpTrackingData>(),
-  roulette: new Map<string, IpTrackingData>(),
   logs: new Map<string, IpTrackingData>(),
   general: new Map<string, IpTrackingData>()
 };

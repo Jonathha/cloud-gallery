@@ -10,6 +10,8 @@ interface AdminUpdateFormProps {
   setRequired: (r: boolean) => void;
   securityCode: string;
   setSecurityCode: (c: string) => void;
+  apkUrl: string;
+  setApkUrl: (u: string) => void;
   saving: boolean;
   onSubmit: (e: React.FormEvent) => void;
 }
@@ -23,6 +25,8 @@ export default function AdminUpdateForm({
   setRequired,
   securityCode,
   setSecurityCode,
+  apkUrl,
+  setApkUrl,
   saving,
   onSubmit,
 }: AdminUpdateFormProps) {
@@ -74,7 +78,7 @@ export default function AdminUpdateForm({
           <input
             id="security-code"
             type="text"
-            placeholder="Ex: SEGREDO123 (Deixe vazio para desativar)"
+            placeholder="Ex: 23 ou SEGREDO123 (Deixe vazio para desativar)"
             value={securityCode}
             onChange={(e) => setSecurityCode(e.target.value)}
             className="w-full bg-zinc-950 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-700 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/10 transition-all font-mono"
@@ -86,7 +90,27 @@ export default function AdminUpdateForm({
 
         <hr className="border-white/5" />
 
-        {/* Campo 4: Exigir Atualização Obrigatória */}
+        {/* Campo 4: URL do Arquivo APK para Download */}
+        <div className="space-y-2">
+          <label htmlFor="apk-url" className="text-xs font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+            Rota / URL do Arquivo APK (Download Direto)
+          </label>
+          <input
+            id="apk-url"
+            type="text"
+            placeholder="https://.../app-release.apk ou deixe vazio para padrão"
+            value={apkUrl}
+            onChange={(e) => setApkUrl(e.target.value)}
+            className="w-full bg-zinc-950 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-700 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/10 transition-all font-mono"
+          />
+          <p className="text-[11px] text-zinc-500">
+            Link direto para download do APK oficial quando a verificação ou atualização for solicitada. Se deixado vazio, utilizará a rota automática do servidor (<code className="text-zinc-400">/api/update/download</code>).
+          </p>
+        </div>
+
+        <hr className="border-white/5" />
+
+        {/* Campo 5: Exigir Atualização Obrigatória */}
         <div className="flex items-start gap-4 p-4 bg-zinc-950/40 rounded-2xl border border-white/5 hover:border-white/10 transition-colors">
           <button
             type="button"

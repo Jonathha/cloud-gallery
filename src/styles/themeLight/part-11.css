@@ -1,0 +1,22 @@
+@layer base {
+  html.theme-light .theme-preserve-dark .border-white\/\[0\.08\] {
+    border-color: rgba(255, 255, 255, 0.08) !important;
+  }
+
+  html.theme-light .theme-preserve-dark .border-white\/10 {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  html.theme-light .theme-preserve-dark .text-zinc-300 {
+    color: #d4d4d8 !important;
+  }
+
+  /* Indicador de seleção do card 'Modo Claro' no tema claro (antes ficava quase branco sobre branco) */
+  html.theme-light .theme-preserve-light .bg-zinc-950 {
+    background-color: #09090b !important;
+  }
+
+  html.theme-light .theme-preserve-light .text-white {
+    color: #ffffff !important;
+  }
+}

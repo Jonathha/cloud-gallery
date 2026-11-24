@@ -1,6 +1,6 @@
-import { dbPrimary } from '../../firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { encryptData, decryptData } from '../../utils/crypto';
+import { authPrimary } from '../../firebase';
+import { fetchVaultConfigApi, updateVaultSettingsApi } from '../../services/vaultApiService';
 
 export async function saveEncryptedShareRecovery(
   userId: string,
@@ -10,6 +10,9 @@ export async function saveEncryptedShareRecovery(
   finalUrl: string
 ): Promise<boolean> {
   if (!userId || !cryptoKey || !shareId) return false;
+  const user = authPrimary.currentUser;
+  if (!user) return false;
+
   try {
     const payloadStr = JSON.stringify({
       v: 1,
@@ -19,10 +22,9 @@ export async function saveEncryptedShareRecovery(
       createdAt: Date.now()
     });
     const { ciphertext, iv } = await encryptData(payloadStr, cryptoKey);
-    const userDocRef = doc(dbPrimary, 'users', userId);
-    const userDocSnap = await getDoc(userDocRef);
-    const existingRecovery = userDocSnap.exists()
-      ? (userDocSnap.data().encryptedShareRecovery || {})
+    const config = await fetchVaultConfigApi(user);
+    const existingRecovery = config?.encryptedShareRecovery
+      ? (typeof config.encryptedShareRecovery === 'object' ? config.encryptedShareRecovery : JSON.parse(config.encryptedShareRecovery || '{}'))
       : {};
 
     existingRecovery[shareId] = {
@@ -32,7 +34,7 @@ export async function saveEncryptedShareRecovery(
       updatedAt: Date.now()
     };
 
-    await setDoc(userDocRef, { encryptedShareRecovery: existingRecovery }, { merge: true });
+    await updateVaultSettingsApi(user, { encryptedShareRecovery: existingRecovery });
     return true;
   } catch (err) {
     console.error('Failed to save encrypted share recovery:', err);
@@ -45,13 +47,18 @@ export async function getEncryptedShareRecoveryMap(
   cryptoKey: CryptoKey | null
 ): Promise<Record<string, string>> {
   if (!userId || !cryptoKey) return {};
+  const user = authPrimary.currentUser;
+  if (!user) return {};
+
   const recoveredMap: Record<string, string> = {};
   try {
-    const userDocRef = doc(dbPrimary, 'users', userId);
-    const userDocSnap = await getDoc(userDocRef);
-    if (!userDocSnap.exists()) return {};
+    const config = await fetchVaultConfigApi(user);
+    if (!config || !config.encryptedShareRecovery) return {};
 
-    const encryptedRecovery = userDocSnap.data().encryptedShareRecovery;
+    const encryptedRecovery = typeof config.encryptedShareRecovery === 'object'
+      ? config.encryptedShareRecovery
+      : JSON.parse(config.encryptedShareRecovery || '{}');
+
     if (!encryptedRecovery || typeof encryptedRecovery !== 'object') return {};
 
     for (const [sId, record] of Object.entries(encryptedRecovery) as [string, any][]) {
@@ -88,14 +95,19 @@ export async function getEncryptedShareRecoveryMap(
 
 export async function removeEncryptedShareRecovery(userId: string, shareId: string) {
   if (!userId || !shareId) return;
+  const user = authPrimary.currentUser;
+  if (!user) return;
+
   try {
-    const userDocRef = doc(dbPrimary, 'users', userId);
-    const userDocSnap = await getDoc(userDocRef);
-    if (userDocSnap.exists()) {
-      const existingRecovery = userDocSnap.data().encryptedShareRecovery || {};
+    const config = await fetchVaultConfigApi(user);
+    if (config && config.encryptedShareRecovery) {
+      const existingRecovery = typeof config.encryptedShareRecovery === 'object'
+        ? config.encryptedShareRecovery
+        : JSON.parse(config.encryptedShareRecovery || '{}');
+
       if (existingRecovery[shareId]) {
         delete existingRecovery[shareId];
-        await setDoc(userDocRef, { encryptedShareRecovery: existingRecovery }, { merge: true });
+        await updateVaultSettingsApi(user, { encryptedShareRecovery: existingRecovery });
       }
     }
   } catch (err) {

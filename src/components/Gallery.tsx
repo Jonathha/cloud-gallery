@@ -21,9 +21,13 @@ import { authPrimary } from "../firebase";
 import { KeyRound } from "lucide-react";
 import MigrationOverlay from "./gallery/MigrationOverlay";
 import DownloadPreferenceModal from "./gallery/DownloadPreferenceModal";
+import TopBackupAlert from "./gallery/TopBackupAlert";
+import BatchTrashProgressModal from "./gallery/BatchTrashProgressModal";
+import { DecryptedImage } from "../types";
+import { useChatBrowserNotifications } from "../hooks/useChatBrowserNotifications";
 
 export default function Gallery() {
-  const { cryptoKey } = useAuth();
+  const { cryptoKey, user } = useAuth();
   const g = useGalleryLogic();
   
   const [isProtectedLightboxOpen, setIsProtectedLightboxOpen] = React.useState(false);
@@ -66,16 +70,51 @@ export default function Gallery() {
   React.useEffect(() => {
     const handleFcmToken = (e: Event) => {
       const fcmToken = (e as CustomEvent).detail;
-      console.log("Visual feedback: FCM Token received in Gallery view:", fcmToken);
-      g.showToast("Token de Notificação (FCM) registrado no celular!", "success");
+      console.log("FCM Token received in Gallery view:", fcmToken);
     };
     window.addEventListener("fcm_token_received", handleFcmToken);
     return () => {
       window.removeEventListener("fcm_token_received", handleFcmToken);
     };
-  }, [g]);
+  }, []);
 
+  // Contrato com o APK (GuarlyBackHandler): retorna true somente se uma ação de retorno foi executada.
+  const backHandlerRef = React.useRef<() => boolean>(() => false);
+  backHandlerRef.current = () => {
+    // 1) Diálogos de cancelamento/confirmação (mesmo caminho do botão Cancelar/Escape de cada um)
+    if (g.isShareOpen && g.selectedImageId) { g.setIsShareOpen(false); return true; }
+    if (g.imageToDelete) { g.setImageToDelete(null); return true; }
+    if (g.isDeletingMultiple) { g.setIsDeletingMultiple(false); return true; }
+    if (g.isCleaningDuplicates) { g.setIsCleaningDuplicates(false); return true; }
+    if (g.isPromptingExtra) { g.setIsPromptingExtra(null); g.setExtraPasswordInput(""); return true; }
+    if (g.isUploaderOpen && !g.isUploading) { g.setIsUploaderOpen(false); return true; }
+    // 2) Lightbox principal: fecha pelo fluxo existente (preserva o histórico do pushState)
+    if (g.selectedImageId) { g.closeLightbox(); return true; }
+    // Lightbox de Protegidas/Lixeira tem estado interno sem acesso daqui: não consome.
+    if (isProtectedLightboxOpen) return false;
+    // 3) Subaba de Configurações → menu (no desktop o menu não é exibido)
+    if (g.activeTab === 'settings' && g.settingsSubTab !== 'menu' && window.innerWidth < 768) {
+      g.setSettingsSubTab('menu');
+      return true;
+    }
+    // 4) Aba principal → galeria
+    if (g.activeTab !== 'gallery') {
+      g.setSettingsSubTab('menu');
+      g.setActiveTab('gallery');
+      g.setIsSelectionMode(false);
+      g.setSelectedForDeletion([]);
+      return true;
+    }
+    return false;
+  };
 
+  React.useEffect(() => {
+    const handler = () => backHandlerRef.current();
+    window.onBackPressed = handler;
+    return () => {
+      if (window.onBackPressed === handler) delete window.onBackPressed;
+    };
+  }, []);
 
   if (!cryptoKey) {
     console.error("[Gallery] Acesso bloqueado: Nenhuma chave criptográfica ativa encontrada no cofre.");
@@ -84,7 +123,7 @@ export default function Gallery() {
 
   const isAdminUser = activeUser?.email === 'jogonesteterp@gmail.com';
 
-  const handleTabChange = (newTab: 'gallery' | 'protected' | 'trash' | 'settings' | 'admin' | 'roulette') => {
+  const handleTabChange = (newTab: 'gallery' | 'protected' | 'trash' | 'settings' | 'admin' | 'chat') => {
     // Block access to non-admin users
     if (newTab === 'admin' && !isAdminUser) {
       g.setActiveTab('gallery');
@@ -95,24 +134,28 @@ export default function Gallery() {
     g.setSelectedForDeletion([]);
   };
 
+  useChatBrowserNotifications(user, g.activeTab, () => handleTabChange('chat'));
+
   return (
-    <div className="bg-[#050505] text-zinc-100 selection:bg-white/20 flex animate-fadeIn h-[100dvh] overflow-hidden w-full">
+    <div className="bg-[#050505] text-zinc-100 selection:bg-white/20 flex animate-fadeIn h-[100dvh] overflow-hidden w-full p-2 gap-2">
       <DragOverlay isDraggingGlobal={g.isDraggingGlobal} />
+      <TopBackupAlert />
+      <BatchTrashProgressModal />
       {g.isMigrationNeeded && <MigrationOverlay migrationItems={g.migrationItems} onComplete={g.completeMigration} />}
       <GallerySidebar
         onViewGallery={() => handleTabChange('gallery')}
         onViewProtected={() => handleTabChange('protected')}
         onOpenTrash={() => handleTabChange('trash')}
         onOpenSettings={() => { g.setSettingsSubTab('menu'); handleTabChange('settings'); }}
-        onOpenRoulette={() => handleTabChange('roulette')}
         onOpenAdmin={() => handleTabChange('admin')}
+        onOpenChat={() => handleTabChange('chat')}
         onLockVault={g.lockVault}
         onLogOut={g.logOut}
         currentView={g.activeTab as any}
         isAdmin={isAdminUser}
       />
 
-      <div className={`flex-1 flex flex-col min-w-0 relative h-full ${g.activeTab === 'admin' || g.activeTab === 'roulette' ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+      <div className={`flex-1 flex flex-col min-w-0 relative h-full bg-[#0a0a0a] rounded-3xl border border-white/[0.04] overflow-hidden ${g.activeTab === 'admin' ? 'overflow-y-auto' : ''}`}>
         <GalleryConfirmModals
           imageToDelete={g.imageToDelete}
           setImageToDelete={g.setImageToDelete}
@@ -172,6 +215,8 @@ export default function Gallery() {
         isSelectionMode={g.isSelectionMode}
         activeTab={g.activeTab}
         setIsUploaderOpen={g.setIsUploaderOpen}
+        selectedImageId={g.selectedImageId}
+        isEmpty={!g.loading && g.images.length === 0}
       />
 
       <AnimatePresence>
@@ -260,6 +305,7 @@ export default function Gallery() {
         setIsSelectionMode={g.setIsSelectionMode}
         setSelectedForDeletion={g.setSelectedForDeletion}
         isAdmin={isAdminUser}
+        settingsSubTab={g.settingsSubTab}
       />
 
       <DownloadPreferenceModal
@@ -269,14 +315,17 @@ export default function Gallery() {
         onSelectThumbnailsOnly={g.onSelectThumbnailsOnly}
       />
 
-      {g.isShareOpen && g.selectedImageId && g.selectedImage && (
-        <ShareModal
-          isOpen={g.isShareOpen}
-          onClose={() => g.setIsShareOpen(false)}
-          imageId={g.selectedImageId}
-          decryptedImageUrl={g.selectedImage}
-        />
-      )}
+      <AnimatePresence>
+        {g.isShareOpen && g.selectedImageId && g.selectedImage && (
+          <ShareModal
+            key="share-modal"
+            isOpen={g.isShareOpen}
+            onClose={() => g.setIsShareOpen(false)}
+            imageId={g.selectedImageId}
+            decryptedImageUrl={g.selectedImage}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

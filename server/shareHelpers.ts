@@ -1,8 +1,10 @@
 import path from "path";
+import type { Request } from "express";
 import fs from "node:fs/promises";
 import { getDB } from "./firebaseAdmin";
 import { IMAGES_DIR } from "./storageHelpers";
 import { downloadFromR2, deleteFromR2 } from "./r2Client";
+import { claimKeysFor } from "./shares/claimKeys";
 
 export const UPLOADS_DIR = path.resolve(process.cwd(), 'uploads');
 export const SHARES_DIR = path.resolve(UPLOADS_DIR, 'shares');
@@ -93,17 +95,16 @@ export async function deleteSharesForImage(imageId: string) {
        deletionPromises.push(doc.ref.delete().catch(() => {}));
 
        if (userId) {
-          const deterministicKey = `${userId}_${imageId}`;
-          
-          // 2. Delete from Firestore (active_shares collection)
-          deletionPromises.push(
-             db.collection('active_shares').doc(deterministicKey).delete().catch(() => {})
-          );
-          
-          // 3. Delete from R2 active_shares
-          deletionPromises.push(
-             deleteFromR2(`active_shares/${deterministicKey}.json`).catch(() => {})
-          );
+          for (const key of claimKeysFor(userId, imageId)) {
+             // 2. Delete from Firestore (active_shares collection)
+             deletionPromises.push(
+                db.collection('active_shares').doc(key).delete().catch(() => {})
+             );
+             // 3. Delete from R2 active_shares
+             deletionPromises.push(
+                deleteFromR2(`active_shares/${key}.json`).catch(() => {})
+             );
+          }
        }
 
        // 4. Delete from R2 shares
@@ -135,3 +136,17 @@ export async function ensureSharesDir() {
   }
 }
 ensureSharesDir();
+
+/**
+ * Resolves the real client IP. Prefers the header set by the trusted edge (Cloudflare) and otherwise the
+ * entry appended by the nearest proxy (last X-Forwarded-For hop), which a client cannot forge by sending
+ * its own X-Forwarded-For value.
+ */
+export function getClientIp(req: Request): string {
+  const cf = req.headers['cf-connecting-ip'];
+  const cfIp = (Array.isArray(cf) ? cf[0] : cf)?.trim();
+  if (cfIp) return cfIp;
+  const fwd = req.headers['x-forwarded-for'];
+  const chain = (Array.isArray(fwd) ? fwd.join(',') : fwd || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return chain[chain.length - 1] || req.socket?.remoteAddress || req.ip || '0.0.0.0';
+}

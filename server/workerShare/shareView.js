@@ -1,120 +1,46 @@
 import { jsonResponse } from "../workerHelpers.js";
-import { extractIdFromUrl, isValidShareId, getClientIp } from "./helpers.js";
+import { extractIdFromUrl, isValidShareId } from "./helpers.js";
 import { getShareR2 } from "./r2.js";
-import { getShareDocFirestore } from "./firestore.js";
-import { getFirestoreDocREST } from "../workerFirestoreREST.js";
+import { getShareForViewD1 } from "../workerD1Shares.js";
 
 export async function handleViewShare(url, env, request) {
-  const reqObj = request || (url && url.headers ? url : null);
   const shareId = extractIdFromUrl(url);
+  if (!shareId || !isValidShareId(shareId)) return jsonResponse({ success: false, error: "Invalid ID" }, 400);
 
-  if (!shareId || !isValidShareId(shareId)) {
-    return jsonResponse({ success: false, error: "Invalid ID" }, 400);
+  const db = env.DB || env.DATABASE || env.d1;
+  const bucket = env.R2;
+  if (!db || !bucket) {
+    return jsonResponse({ success: false, error: "Serviço de compartilhamento temporariamente indisponível." }, 503);
   }
 
-  const bucket = env.R2 || env.CHAT_R2;
-  let shareData = null;
-
-  if (bucket) {
-    shareData = await getShareR2(bucket, shareId);
-  }
-
-  if (!shareData) {
-    return jsonResponse({ success: false, error: "Link de compartilhamento não encontrado ou expirado." }, 404);
-  }
-
-  // 1 & 2 & 3. Valide o share e confirme no Firestore que a mídia original ainda existe.
-  // Como shares são deletados atomicamente junto com a mídia original,
-  // a presença do share no Firestore garante a validade da mídia associada.
+  let shareData;
   try {
-    const fsShare = await getShareDocFirestore(shareId, null);
-    if (!fsShare) {
-      // A mídia original foi excluída (ou share invalidado) e o documento foi apagado do Firestore.
-      if (bucket) {
-        try { await bucket.delete(`shares/${shareId}.json`); } catch (e) {}
-      }
-      return jsonResponse({ success: false, error: "Link de compartilhamento inválido ou a mídia original foi excluída." }, 404);
-    }
+    shareData = await getShareR2(bucket, shareId);
   } catch (err) {
-    console.warn("[Worker] Failed to validate share doc in Firestore:", err);
+    console.error("[handleViewShare] R2 lookup failed:", err);
+    return jsonResponse({ success: false, error: "Não foi possível consultar o compartilhamento." }, 503);
   }
+  if (!shareData) return jsonResponse({ success: false, error: "Link de compartilhamento não encontrado, revogado ou expirado." }, 404);
 
-  // Validação direta da mídia original (fallback em caso de dessincronização)
-  if (shareData.imageId) {
-    try {
-      const imgDoc = await getFirestoreDocREST('images', shareData.imageId, null);
-      if (imgDoc === null) {
-        // Documento da imagem comprovadamente não existe (404)
-        if (bucket) {
-           try { await bucket.delete(`shares/${shareId}.json`); } catch(e) {}
-        }
-        return jsonResponse({ success: false, error: "Link de compartilhamento inválido ou a mídia original foi excluída." }, 404);
-      }
-    } catch (err) {
-      // 403 Forbidden é esperado aqui para usuários não autenticados devido às regras de segurança.
-      // O fluxo pode prosseguir normalmente.
-    }
+  let d1Share;
+  try {
+    const clientIp = request?.headers?.get?.("CF-Connecting-IP") || request?.headers?.get?.("x-forwarded-for") || "0.0.0.0";
+    d1Share = await getShareForViewD1(db, shareId, clientIp);
+  } catch (err) {
+    console.error("[handleViewShare] D1 lookup failed:", err);
+    return jsonResponse({ success: false, error: "Não foi possível validar o compartilhamento." }, 503);
   }
+  if (d1Share?.highDemand) return jsonResponse({ success: false, highDemand: true, error: "Este compartilhamento está com alta demanda." }, 429);
+  if (!d1Share) return jsonResponse({ success: false, error: "Link de compartilhamento não encontrado, revogado ou expirado." }, 404);
 
-  const now = Date.now();
-  const expiresAt = shareData.options?.expiresAt || shareData.expiresAt;
-
-  if (expiresAt && now > Number(expiresAt)) {
-    if (bucket) {
-      try {
-        await bucket.delete(`shares/${shareId}.json`);
-      } catch {}
-    }
-    return jsonResponse({ success: false, error: "Este link de compartilhamento expirou (limite de 1 hora)." }, 410);
+  const merged = {
+    ...shareData, ...d1Share, id: shareId,
+    firstViewedAt: d1Share.firstViewedAt || shareData.firstViewedAt || null,
+    firstViewerIp: d1Share.firstViewerIp || shareData.firstViewerIp || null
+  };
+  const expiresAt = merged.options?.expiresAt || merged.expiresAt;
+  if (expiresAt && Number(expiresAt) <= Date.now()) {
+    return jsonResponse({ success: false, error: "Link de compartilhamento expirado." }, 410);
   }
-
-  const clientIp = getClientIp(reqObj);
-
-  if (shareData.options?.oneTimeView) {
-    if (!shareData.firstViewedAt) {
-      shareData.firstViewedAt = now;
-      shareData.firstViewerIp = clientIp;
-      if (bucket) {
-        try {
-          await bucket.put(`shares/${shareId}.json`, JSON.stringify(shareData));
-        } catch {}
-      }
-    } else {
-      const secondsElapsed = (now - Number(shareData.firstViewedAt)) / 1000;
-      if (secondsElapsed > 60) {
-        if (bucket) {
-          try {
-            await bucket.delete(`shares/${shareId}.json`);
-          } catch {}
-        }
-        return jsonResponse({ success: false, error: "Esta visualização única expirou. O limite de 1 minuto foi atingido e o arquivo foi excluído permanentemente." }, 403);
-      }
-      if (shareData.firstViewerIp && shareData.firstViewerIp !== clientIp) {
-        return jsonResponse({ success: false, error: "Acesso bloqueado: Este link de visualização única está travado no dispositivo inicial." }, 403);
-      }
-    }
-  }
-
-  return jsonResponse({
-    success: true,
-    share: {
-      id: shareData.id || shareId,
-      ciphertext: shareData.ciphertext,
-      iv: shareData.iv,
-      contentType: shareData.contentType || 'image/png',
-      isChunked: shareData.isChunked || false,
-      chunkCount: shareData.chunkCount || 1,
-      totalSize: shareData.totalSize || 0,
-      options: {
-        requirePassword: !!shareData.options?.requirePassword,
-        encryptedShareKey: shareData.options?.encryptedShareKey || null,
-        ivShareKey: shareData.options?.ivShareKey || null,
-        allowDownload: shareData.options?.allowDownload !== false,
-        oneTimeView: !!shareData.options?.oneTimeView,
-        expiresAt: shareData.options?.expiresAt || null
-      },
-      firstViewedAt: shareData.firstViewedAt || null,
-      clientIp
-    }
-  });
+  return jsonResponse({ success: true, share: merged });
 }

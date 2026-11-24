@@ -30,8 +30,18 @@ export type AuditEventType =
   | 'logout' 
   | 'system_entry' 
   | 'share_create' 
+  | 'share_delete'
   | 'file_upload' 
   | 'file_delete' 
+  | 'trash_delete'
+  | 'vault_unlock'
+  | 'vault_setup'
+  | 'vault_failed_attempt'
+  | 'vault_lockout'
+  | 'vault_pin_change'
+  | 'extra_password_change'
+  | 'encryption_mode_change'
+  | 'password_change'
   | 'admin_action'
   | 'admin_access';
 
@@ -54,8 +64,21 @@ export interface AuditEventRecord {
   operatingSystem?: string;
   country?: string;
   city?: string;
+  region?: string;
   sessionId?: string;
+  requestId?: string;
   anonymous?: boolean;
+  attemptNumber?: number;
+  maxAttempts?: number;
+  locked?: boolean;
+  method?: string;
+  fileSize?: number;
+  fileName?: string;
+  mediaType?: string;
+  itemCount?: number;
+  resourceId?: string;
+  result?: string;
+  status?: string;
 }
 
 export type SecurityEventType =
@@ -85,12 +108,19 @@ export interface SecurityEventRecord {
   reason: string;
   details?: string;
   path?: string;
+  method?: string;
+  statusCode?: number;
+  ruleCode?: string;
+  actionTaken?: string;
+  detectionResult?: string;
   userAgent?: string;
   platform?: string;
   browser?: string;
   operatingSystem?: string;
   country?: string;
   city?: string;
+  region?: string;
   sessionId?: string;
+  requestId?: string;
   anonymous?: boolean;
 }
