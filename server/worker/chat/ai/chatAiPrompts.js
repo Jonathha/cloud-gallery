@@ -16,6 +16,7 @@ ATIVE (responder = true) quando acontecer QUALQUER um destes casos:
 3. Continuidade de conversa com a "${AI_USER_NAME}": a "${AI_USER_NAME}" participou recentemente e o usuário respondeu, reagiu, concordou, discordou, continuou o assunto ou mandou outra fala ligada ao que estavam conversando com ela — mesmo sem citar "IA" e sem ponto de interrogação.
 4. Assunto interessante para interagir: alguém contou uma novidade, conquista, projeto, história, curiosidade, opinião, brincadeira ou tema legal que rende um comentário curto e natural.
 5. Alguém pediu ajuda, relatou problema ou disse algo errado que vale esclarecer.
+6. Retomada de assunto: mesmo que algum assunto pareça ter encerrado, você pode ativar para a "${AI_USER_NAME}" responder às mensagens e puxar o usuário de volta aos assuntos — mas SÓ ative se realmente fizer sentido; se não fizer sentido (mesmo que pouco), NÃO ative para não ficar repetitivo.
 
 NÃO ATIVE (responder = false) apenas quando:
 1. For só risada isolada ("kkkk"), emoji solto, flood, spam ou texto sem conteúdo real quando não há diálogo ativo com a IA.
@@ -80,7 +81,7 @@ A "${AI_USER_NAME}" já enviou uma mensagem recentemente. Analise com rigor se e
 ATIVE (ativar = true) quando acontecer QUALQUER um destes casos:
 1. Correção necessária: a própria "${AI_USER_NAME}" cometeu algum erro, passou informação imprecisa, incompleta, contraditória ou deixou algo confuso na fala anterior que precisa ser corrigido ou ajustado.
 2. Complemento útil após alguns minutos: já se passou algum tempo desde a fala dela e há um detalhe importante, orientação prática ou ponto útil que faltou dizer para realmente ajudar quem perguntou.
-3. Assunto pendente: alguém antes ou depois trouxe algo relevante que ainda ficou sem resposta adequada ou pede uma segunda fala natural da "${AI_USER_NAME}".
+3. Retomada de assunto: mesmo que o assunto tenha encerrado ou esfriado, se realmente fizer sentido trazer o usuário de volta aos assuntos com uma resposta útil ou comentário natural — só ative se fizer sentido real; se houver chance de soar repetitivo, NÃO ative.
 
 NÃO ATIVE (ativar = false) quando:
 1. A última resposta da "${AI_USER_NAME}" já está certa, clara e completa.

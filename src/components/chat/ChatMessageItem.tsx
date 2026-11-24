@@ -200,8 +200,9 @@ function ChatMessageItemComponent({
           {msg.userName}
           {(msg.userId === 'ia-assistant' || msg.userId === 'ai-assistant-system') && (
             <span className="inline-flex items-center" title="Verificado" aria-label="Verificado">
-              <svg viewBox="0 0 24 24" className="w-3 h-3 text-sky-400 shrink-0" fill="currentColor">
-                <path d="M12 2l2.39 1.97 3.09-.24.94 2.95 2.68 1.56-.56 3.04L22 14l-1.46 2.72.56 3.04-2.68 1.56-.94 2.95-3.09-.24L12 22l-2.39-1.97-3.09.24-.94-2.95-2.68-1.56.56-3.04L2 14l1.46-2.72-.56-3.04 2.68-1.56.94-2.95 3.09.24L12 2zm-1.1 13.4l5.2-5.2-1.4-1.4-3.8 3.8-1.8-1.8-1.4 1.4 3.2 3.2z" />
+              <svg viewBox="0 0 24 24" className="w-3 h-3 shrink-0" aria-hidden="true">
+                <path fill="#38bdf8" d="M12 2l2.4 1.9 3.1-.2.9 2.9 2.7 1.5-.6 3.1L22 12l-1.5 2.8.6 3.1-2.7 1.5-.9 2.9-3.1-.2L12 22l-2.4-1.9-3.1.2-.9-2.9-2.7-1.5.6-3.1L2 12l1.5-2.8-.6-3.1 2.7-1.5.9-2.9 3.1.2L12 2z" />
+                <path fill="none" stroke="#ffffff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" d="M8.5 12.3l2.3 2.3 4.8-5.1" />
               </svg>
             </span>
           )}

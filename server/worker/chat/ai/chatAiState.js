@@ -95,9 +95,8 @@ export async function claimAi(env, { kind, aiMessageId, latestMsgId } = {}) {
   return { kind, doc: next, updatedAt: written.updatedAt };
 }
 
-/** Libera a trava e atualiza o estado da IA após a avaliação. */
-export async function finishAi(env, claim, sent, evaluatedMsgId = null) {
-  const next = { ...claim.doc, busyUntil: 0 };
+function applyFinishFields(baseDoc, claimKind, sent, evaluatedMsgId) {
+  const next = { ...baseDoc, busyUntil: 0 };
   if (evaluatedMsgId) {
     next.lastEvaluatedMsgId = evaluatedMsgId;
     if (next.pendingMsgId === evaluatedMsgId) {
@@ -108,13 +107,35 @@ export async function finishAi(env, claim, sent, evaluatedMsgId = null) {
     next.lastAiAt = sent.at;
     next.lastAiId = sent.messageId;
     next.lastEvaluatedMsgId = sent.messageId;
-    next.pendingMsgId = null;
-    next.sentAt = [...(claim.doc.sentAt || []), sent.at];
-    next.chain = claim.kind === "continue" ? (claim.doc.chain || 0) + 1 : 0;
-    next.followupChain = claim.kind === "followup" ? (claim.doc.followupChain || 0) + 1 : 0;
+    if (next.pendingMsgId === sent.messageId) {
+      next.pendingMsgId = null;
+    }
+    next.sentAt = [...(baseDoc.sentAt || []), sent.at];
+    next.chain = claimKind === "continue" ? (baseDoc.chain || 0) + 1 : 0;
+    next.followupChain = claimKind === "followup" ? (baseDoc.followupChain || 0) + 1 : 0;
   }
+  return next;
+}
+
+/** Libera a trava e atualiza o estado da IA após a avaliação (reconciliando conflito de pendingMsgId). */
+export async function finishAi(env, claim, sent, evaluatedMsgId = null) {
   try {
-    await writeAiState(env, next, claim.updatedAt);
+    const next = applyFinishFields(claim.doc, claim.kind, sent, evaluatedMsgId);
+    const written = await writeAiState(env, next, claim.updatedAt);
+    if (written.ok) return;
+
+    // Se markPendingMessage atualizou a linha durante a execução, reconcilia preservando pendingMsgId
+    const fresh = await readAiState(env);
+    const merged = applyFinishFields(
+      { ...claim.doc, pendingMsgId: fresh.doc?.pendingMsgId ?? claim.doc.pendingMsgId },
+      claim.kind,
+      sent,
+      evaluatedMsgId
+    );
+    if (fresh.doc?.pendingMsgId && fresh.doc.pendingMsgId !== evaluatedMsgId && fresh.doc.pendingMsgId !== sent?.messageId) {
+      merged.pendingMsgId = fresh.doc.pendingMsgId;
+    }
+    await writeAiState(env, merged, fresh.updatedAt);
   } catch {
     // Trava expira automaticamente pelo BUSY_LOCK_MS
   }

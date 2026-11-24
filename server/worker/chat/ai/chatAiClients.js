@@ -99,10 +99,10 @@ export function callGroqGate(env, system, user) {
       response_format: { type: "json_object" },
       reasoning_effort: "low",
       include_reasoning: false,
-      max_completion_tokens: 800,
+      max_completion_tokens: 1200,
       temperature: 0.2
     },
-    minimal: { max_completion_tokens: 800 }
+    minimal: { max_completion_tokens: 1200 }
   });
 }
 

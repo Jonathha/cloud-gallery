@@ -133,11 +133,16 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
     const finalText = sanitizeAiMessageText(writer.mensagem);
     if (!finalText) return true;
 
-    // 3. Resolve citação "respondendo a..." somente se necessária e válida
+    // 3. Só usa citação "respondendo a..." se alguém diferente falou depois da mensagem alvo (evita citação inútil logo abaixo)
     const replyCandidate = resolveRef(writer.responder_a, recent);
-    const replyTarget = replyCandidate && !isAiAuthor(replyCandidate.userId)
-      ? replyCandidate
-      : null;
+    let replyTarget = null;
+    if (replyCandidate && !isAiAuthor(replyCandidate.userId)) {
+      const targetIdx = recent.findIndex(m => m.id === replyCandidate.id);
+      const hasOtherMessageAfter = targetIdx >= 0 && recent.slice(targetIdx + 1).some(m => m.userId !== replyCandidate.userId);
+      if (hasOtherMessageAfter) {
+        replyTarget = replyCandidate;
+      }
+    }
 
     const aiMessage = {
       id: "ai-" + crypto.randomUUID(),
@@ -181,7 +186,7 @@ export async function triggerAiAfterMessage(message, env) {
     const claimed = await runAiEvaluation(env, "reply", message.id);
     if (!claimed) {
       await markPendingMessage(env, message.id);
-      await sleep(2200);
+      await sleep(1600);
       await runAiEvaluation(env, "reply", message.id);
     }
   } catch {
