@@ -2,7 +2,7 @@ import { jsonResponse } from "../../workerHelpers.js";
 import { validateBanco1Token } from "../../workerChatAuth.js";
 import { isUserAdmin } from "../../workerLogs/auth.js";
 import { getChatProfile, saveChatProfile } from "../../chatGlobalD1.js";
-import { isReservedUsername } from "./chatUsername.js";
+import { isAiUsername, isReservedUsername } from "./chatUsername.js";
 
 const profileMemoryCache = new Map();
 
@@ -24,6 +24,10 @@ export async function handleChatProfile(request, env) {
     const body = await request.json().catch(() => ({}));
     const username = String(body.username || "").trim();
     if (!username || username.length > 80) return jsonResponse({ success: false, error: "Nome de usuário inválido." }, 400);
+
+    if (isAiUsername(username)) {
+      return jsonResponse({ success: false, error: "O nome IA é exclusivo da assistente oficial do chat." }, 400);
+    }
 
     const isAdmin = isUserAdmin(user.email, env, user.email_verified);
     if (!isAdmin && isReservedUsername(username)) {

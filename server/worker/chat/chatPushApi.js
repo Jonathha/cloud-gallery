@@ -1,4 +1,5 @@
 import { jsonResponse } from "../../workerHelpers.js";
+import { maybeContinueAi } from "./ai/chatAiOrchestrator.js";
 import { getUserVersion } from "../../userSync.js";
 import { auth } from "./chatProfileApi.js";
 import {
@@ -19,9 +20,12 @@ function isValidPushEndpoint(endpoint) {
   }
 }
 
-export async function handleChatVersion(request, env) {
+export async function handleChatVersion(request, env, ctx) {
   try {
     await auth(request);
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(maybeContinueAi(env).catch(() => {}));
+    }
     const version = await getUserVersion(CHAT_GLOBAL_SYNC_KEY);
     return jsonResponse({ success: true, version });
   } catch (err) {

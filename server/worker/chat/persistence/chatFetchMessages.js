@@ -1,12 +1,13 @@
 import { jsonResponse } from "../../../workerHelpers.js";
 import { getChatMessagesPage } from "../../../chatGlobalD1.js";
 import { createChatMediaSignature, getMediaKeyFromUrl } from "../../../workerChatMediaAuth.js";
+import { maybeContinueAi } from "../ai/chatAiOrchestrator.js";
 
 /**
  * Handles fetching chat messages list and signing audio media URLs
  * Formats signed URLs with expiration and signature query parameters
  */
-export async function fetchChatMessagesList(request, env) {
+export async function fetchChatMessagesList(request, env, ctx) {
   const url = new URL(request.url);
   const limit = Number(url.searchParams.get("limit") || 100);
   const beforeParam = url.searchParams.get("before");
@@ -36,6 +37,10 @@ export async function fetchChatMessagesList(request, env) {
     const sigParam = encodeURIComponent(signed.sig);
     const signedUrl = `/api/chat/media/${encodedKey}?exp=${expParam}&sig=${sigParam}`;
     message.audioUrl = signedUrl;
+  }
+
+  if (!cursor && ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(maybeContinueAi(env).catch(() => {}));
   }
 
   return jsonResponse({ success: true, messages, hasMore });

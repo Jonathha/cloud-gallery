@@ -8,7 +8,8 @@ import { validateChatAudioAttachment } from "./persistence/chatAudioValidator.js
 import { bumpUserVersion } from "../../userSync.js";
 import { CHAT_GLOBAL_SYNC_KEY } from "./chatPushApi.js";
 import { dispatchChatPushNotifications } from "./chatWebPush.js";
-import { maybeTriggerAiAssistant } from "./chatAiAssistant.js";
+import { AI_USER_ID } from "./ai/chatAiConfig.js";
+import { triggerAiAfterMessage } from "./ai/chatAiOrchestrator.js";
 
 /**
  * Handles chat message retrieval and message publishing in D1
@@ -19,7 +20,7 @@ export async function handleChatMessages(request, env, ctx) {
     await ensureChatGlobalSchema(env);
 
     if (request.method === "GET") {
-      return await fetchChatMessagesList(request, env);
+      return await fetchChatMessagesList(request, env, ctx);
     }
 
     const body = await request.json().catch(() => ({}));
@@ -34,18 +35,24 @@ export async function handleChatMessages(request, env, ctx) {
     }
 
     await saveChatMessage(message, env);
+
+    const aiTask = (message.userId !== AI_USER_ID && message.mediaType === "text")
+      ? triggerAiAfterMessage(message, env).catch(() => {})
+      : Promise.resolve();
+
     const notifyWork = Promise.all([
       bumpUserVersion(CHAT_GLOBAL_SYNC_KEY),
       dispatchChatPushNotifications(message, env).catch(err => {
         console.error("[handleChatMessages] Web Push dispatch error:", err);
       }),
-      maybeTriggerAiAssistant(message, env, ctx).catch(() => {})
+      aiTask
     ]);
     if (ctx && typeof ctx.waitUntil === "function") {
       ctx.waitUntil(notifyWork);
     } else {
       await notifyWork;
     }
+
     return jsonResponse({ success: true, message });
   } catch (err) {
     if (err && err.rateLimited) {

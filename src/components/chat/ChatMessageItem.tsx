@@ -196,11 +196,13 @@ function ChatMessageItemComponent({
     <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} relative group select-none`}>
       {/* Sender name only for other users on the first message of a cluster */}
       {!isMe && isFirstInGroup && (
-        <span className="text-[11px] text-zinc-400/90 mb-1 px-1.5 font-semibold tracking-tight flex items-center gap-1">
+        <span className="text-[11px] text-zinc-400/90 mb-1 px-1.5 font-semibold tracking-tight inline-flex items-center gap-1">
           {msg.userName}
-          {msg.userName === 'IA' && (
-            <span className="inline-flex items-center justify-center w-3 h-3 bg-blue-500 text-white rounded-full text-[8px]" title="Verificado">
-              ✓
+          {(msg.userId === 'ia-assistant' || msg.userId === 'ai-assistant-system') && (
+            <span className="inline-flex items-center" title="Verificado" aria-label="Verificado">
+              <svg viewBox="0 0 24 24" className="w-3 h-3 text-sky-400 shrink-0" fill="currentColor">
+                <path d="M12 2l2.39 1.97 3.09-.24.94 2.95 2.68 1.56-.56 3.04L22 14l-1.46 2.72.56 3.04-2.68 1.56-.94 2.95-3.09-.24L12 22l-2.39-1.97-3.09.24-.94-2.95-2.68-1.56.56-3.04L2 14l1.46-2.72-.56-3.04 2.68-1.56.94-2.95 3.09.24L12 2zm-1.1 13.4l5.2-5.2-1.4-1.4-3.8 3.8-1.8-1.8-1.4 1.4 3.2 3.2z" />
+              </svg>
             </span>
           )}
         </span>

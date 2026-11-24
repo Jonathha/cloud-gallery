@@ -104,7 +104,7 @@ export default {
       }
       else if (url.pathname === "/api/chat/version" && method === "GET") {
         const { handleChatVersion } = await import("./workerChatGlobal.js");
-        response = await handleChatVersion(request, env);
+        response = await handleChatVersion(request, env, ctx);
       }
       else if (url.pathname === "/api/chat/push/vapid-key" && method === "GET") {
         const { handleChatVapidKey } = await import("./workerChatGlobal.js");

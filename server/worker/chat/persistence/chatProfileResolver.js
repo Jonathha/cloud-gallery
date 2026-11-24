@@ -1,7 +1,7 @@
 import { getChatProfile, saveChatProfile } from "../../../chatGlobalD1.js";
 import { isUserAdmin } from "../../../workerLogs/auth.js";
 import { profileMemoryCache } from "../chatProfileApi.js";
-import { isReservedUsername } from "../chatUsername.js";
+import { isAiUsername, isReservedUsername } from "../chatUsername.js";
 
 /**
  * Resolves or auto-creates chat profile for the authenticated user
@@ -20,7 +20,7 @@ export async function resolveChatUserProfile(user, env) {
 
   let defaultName = user.email ? user.email.split("@")[0] : `User_${user.uid.slice(0, 5)}`;
   const isAdmin = isUserAdmin(user.email, env, user.email_verified);
-  if (!isAdmin && isReservedUsername(defaultName)) {
+  if (isAiUsername(defaultName) || (!isAdmin && isReservedUsername(defaultName))) {
     defaultName = `User_${user.uid.slice(0, 5)}`;
   }
 
