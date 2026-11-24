@@ -18,6 +18,7 @@ import {
 } from "./chatAiConfig.js";
 import {
   GEMINI_SYSTEM_PROMPT,
+  GROQ_CONTEXT_AWARENESS_SYSTEM_PROMPT,
   GROQ_CONTINUE_SYSTEM_PROMPT,
   GROQ_FOLLOWUP_SYSTEM_PROMPT,
   GROQ_GATE_SYSTEM_PROMPT
@@ -25,6 +26,7 @@ import {
 import { callGeminiWriter, callGroqGate } from "./chatAiClients.js";
 import {
   buildTranscript,
+  describeConversationContext,
   describeNow,
   describePresence,
   loadRecentMessages,
@@ -53,10 +55,9 @@ async function sleep(ms) {
   await new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/** Executa o fluxo completo: Claim -> Groq Gate (10 msgs + presença) -> Gemini Writer (30 msgs + presença) -> Persistência. */
+/** Executa o fluxo completo: Claim -> Groq Gate (10 msgs + presença + contexto) -> Gemini Writer (30 msgs + presença) -> Persistência. */
 export async function runAiEvaluation(env, triggerType = "reply", targetMessageId = null) {
   if (!env?.GEMINI_API_KEY || !env?.GROQ_API_KEY) return false;
-
   const claim = await claimAi(env, {
     kind: triggerType,
     aiMessageId: (triggerType === "continue" || triggerType === "followup") ? targetMessageId : undefined,
@@ -65,10 +66,12 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
   if (!claim) return false;
 
   let evaluatedLastId = null;
+  let retryMsgId = null;
   let finished = false;
   try {
     const isContinue = triggerType === "continue";
     const isFollowup = triggerType === "followup";
+
     const [recent, presenceLine] = await Promise.all([
       loadRecentMessages(env, GEMINI_CONTEXT_MESSAGES),
       describePresence()
@@ -86,24 +89,29 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
       if (lastMsg.id !== targetMessageId || !isAiAuthor(lastMsg.userId)) return true;
     }
 
-    // 1. Groq (openai/gpt-oss-120b) analisa até 10 mensagens + quem está online para decidir se ativa o Gemini
+    // 1. Groq (openai/gpt-oss-120b) analisa até 10 mensagens + referências + quem está online + contexto direto
     const groqStartIdx = Math.max(0, recent.length - GROQ_CONTEXT_MESSAGES);
     const groqSlice = recent.slice(groqStartIdx);
-    const groqTranscript = buildTranscript(groqSlice, groqStartIdx + 1, now);
+    const groqTranscript = buildTranscript(groqSlice, groqStartIdx + 1, now, recent);
+    const contextLine = describeConversationContext(recent, now, targetMessageId || lastMsg.id);
 
-    let groqSystem = GROQ_GATE_SYSTEM_PROMPT;
-    let groqPrompt = `Agora: ${describeNow(now)} (Brasília)\n${presenceLine}\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nAnalise a conversa até a mensagem #${recent.length}. A "${AI_USER_NAME}" deve responder ou interagir agora?`;
-
+    let groqSystems = [GROQ_GATE_SYSTEM_PROMPT, GROQ_CONTEXT_AWARENESS_SYSTEM_PROMPT];
+    let groqPrompt = `Agora: ${describeNow(now)} (Brasília)\n${presenceLine}\n${contextLine}\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nAnalise a conversa até a mensagem #${recent.length}. A "${AI_USER_NAME}" deve responder ou interagir agora?`;
     if (isContinue) {
-      groqSystem = GROQ_CONTINUE_SYSTEM_PROMPT;
-      groqPrompt = `Agora: ${describeNow(now)} (Brasília)\n${presenceLine}\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nA "${AI_USER_NAME}" acabou de enviar a mensagem #${recent.length}. Vale ela enviar uma continuação útil agora?`;
+      groqSystems = [GROQ_CONTINUE_SYSTEM_PROMPT, GROQ_CONTEXT_AWARENESS_SYSTEM_PROMPT];
+      groqPrompt = `Agora: ${describeNow(now)} (Brasília)\n${presenceLine}\n${contextLine}\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nA "${AI_USER_NAME}" acabou de enviar a mensagem #${recent.length}. Vale ela enviar uma continuação útil agora?`;
     } else if (isFollowup) {
-      groqSystem = GROQ_FOLLOWUP_SYSTEM_PROMPT;
-      groqPrompt = `Agora: ${describeNow(now)} (Brasília)\n${presenceLine}\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nA "${AI_USER_NAME}" enviou a mensagem #${recent.length} há algum tempo. Analise se ela precisa falar novamente agora (corrigir algo, complementar ou retomar algum ponto importante).`;
+      groqSystems = [GROQ_FOLLOWUP_SYSTEM_PROMPT, GROQ_CONTEXT_AWARENESS_SYSTEM_PROMPT];
+      groqPrompt = `Agora: ${describeNow(now)} (Brasília)\n${presenceLine}\n${contextLine}\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nA "${AI_USER_NAME}" enviou a mensagem #${recent.length} há algum tempo. Analise se ela precisa falar novamente agora (corrigir algo, complementar ou retomar algum ponto importante).`;
     }
 
-    const gate = await callGroqGate(env, groqSystem, groqPrompt);
-    if (!gate) return true;
+    const gate = await callGroqGate(env, groqSystems, groqPrompt);
+    if (!gate) {
+      if (triggerType === "reply" && claim.doc.apiRetryFor !== evaluatedLastId) {
+        retryMsgId = evaluatedLastId;
+      }
+      return true;
+    }
 
     const shouldActivate = isContinue
       ? gate.continuar === true
@@ -113,8 +121,8 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
     if (!shouldActivate) return true;
 
     // 2. Gemini (gemini-3.5-flash-lite) lê até 30 mensagens + presença online, gera pensamento interno privado e redige a fala
-    const fullTranscript = buildTranscript(recent, 1, now);
-    let geminiPrompt = `Agora: ${describeNow(now)} (Brasília)\n${presenceLine}\n\nHistórico recente do Chat Global (até ${recent.length} mensagens):\n${fullTranscript}\n\n`;
+    const fullTranscript = buildTranscript(recent, 1, now, recent);
+    let geminiPrompt = `Agora: ${describeNow(now)} (Brasília)\n${presenceLine}\n${contextLine}\n\nHistórico recente do Chat Global (até ${recent.length} mensagens):\n${fullTranscript}\n\n`;
     if (isContinue || isFollowup) {
       geminiPrompt += `MODO CONTINUAÇÃO: Sua última mensagem foi a #${recent.length} e ninguém respondeu depois. Analise o que você falou antes e a conversa recente: se houver algo novo, importante para corrigir/esclarecer ou útil para complementar sem repetir o que já disse, escreva em "mensagem". Caso contrário defina "enviar": false.`;
       if (gate.alvo) {
@@ -128,7 +136,13 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
     }
 
     const writer = await callGeminiWriter(env, GEMINI_SYSTEM_PROMPT, geminiPrompt);
-    if (!writer || writer.enviar !== true) return true;
+    if (!writer) {
+      if (triggerType === "reply" && claim.doc.apiRetryFor !== evaluatedLastId) {
+        retryMsgId = evaluatedLastId;
+      }
+      return true;
+    }
+    if (writer.enviar !== true) return true;
 
     const finalText = sanitizeAiMessageText(writer.mensagem);
     if (!finalText) return true;
@@ -152,7 +166,6 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
       text: finalText,
       createdAt: Date.now()
     };
-
     if (replyTarget) {
       aiMessage.replyToId = replyTarget.id;
       aiMessage.replyToUserName = replyTarget.userName || "Usuário";
@@ -169,10 +182,13 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
     await finishAi(env, claim, { messageId: aiMessage.id, at: aiMessage.createdAt }, aiMessage.id);
     return true;
   } catch {
+    if (triggerType === "reply" && evaluatedLastId && claim.doc.apiRetryFor !== evaluatedLastId) {
+      retryMsgId = evaluatedLastId;
+    }
     return true;
   } finally {
     if (!finished) {
-      await finishAi(env, claim, null, evaluatedLastId);
+      await finishAi(env, claim, null, retryMsgId ? null : evaluatedLastId, retryMsgId);
     }
   }
 }
@@ -182,6 +198,7 @@ export async function triggerAiAfterMessage(message, env) {
   try {
     if (!message || isAiAuthor(message.userId) || message.mediaType !== "text") return;
     if (!env?.GEMINI_API_KEY || !env?.GROQ_API_KEY) return;
+
     await sleep(SETTLE_MS);
     const claimed = await runAiEvaluation(env, "reply", message.id);
     if (!claimed) {

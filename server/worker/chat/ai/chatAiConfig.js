@@ -21,7 +21,7 @@ export const SETTLE_MS = 1200;
 export const MIN_GAP_BETWEEN_AI_MS = 1_500;
 export const MAX_AI_MESSAGES_PER_HOUR = 40;
 export const BUSY_LOCK_MS = 25_000;
-export const REQUEST_TIMEOUT_MS = 8_000;
+export const REQUEST_TIMEOUT_MS = 6_500;
 
 // Sistema de continuação e reativação após alguns minutos (avaliados pelo Groq)
 export const CONTINUE_MIN_AGE_MS = 15_000;

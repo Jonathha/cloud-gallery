@@ -93,3 +93,10 @@ Campo "alvo": informe "#n" apenas se for necessário citar uma mensagem específ
 
 Responda SOMENTE com JSON válido:
 {"ativar": true ou false, "alvo": "#12" ou null, "motivo": "curto"}`;
+
+/** Novo prompt separado exclusivo para o Groq: consciência exata de qual mensagem está em pauta, citações e contexto temporal. */
+export const GROQ_CONTEXT_AWARENESS_SYSTEM_PROMPT = `REGRAS ADICIONAIS DE CONSCIÊNCIA DE MENSAGEM E CONTEXTO (GROQ):
+1. Identificação exata de referência: as mensagens podem trazer "(respondendo à #N de Autor: \"trecho\")" ou "(respondendo a Autor: \"trecho\")". Use isso para saber com precisão a qual mensagem anterior alguém respondeu, sem confundir com outra fala parecida.
+2. Referência implícita após pausa ou sem citação: leia o bloco "Contexto direto" (qual mensagem #N acabou de chegar, qual foi a última fala #M da "${AI_USER_NAME}" e quanto tempo se passou). Mesmo que tenham se passado vários minutos ou horas, e mesmo sem o usuário escrever "IA", usar "?" ou clicar em responder, se ele disser algo ligado ao que a "${AI_USER_NAME}" falou antes (ex.: "n entendi", "vc n fala...", "como assim", discordar, cobrar, reagir ou continuar o assunto), ele está falando COM a "${AI_USER_NAME}" sobre aquela mensagem dela — ative!
+3. Mensagens em sequência (bursts) e vários usuários: considere todas as mensagens recentes do mesmo usuário em sequência como parte do mesmo raciocínio. Se houver vários assuntos recentes ou risco de confusão sobre a qual fala a "${AI_USER_NAME}" deve responder, informe o "#n" exato no campo "alvo"; se a fala for continuação direta da última mensagem sem ambiguidade, deixe "alvo": null.
+4. Presença online: observe quantas pessoas estão online agora. Quando houver apenas 1 pessoa humana online no chat e ela mandar uma dúvida, comentário ou continuação, praticamente sempre ela está falando no espaço compartilhado com a "${AI_USER_NAME}".`;

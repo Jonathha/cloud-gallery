@@ -95,10 +95,18 @@ export async function claimAi(env, { kind, aiMessageId, latestMsgId } = {}) {
   return { kind, doc: next, updatedAt: written.updatedAt };
 }
 
-function applyFinishFields(baseDoc, claimKind, sent, evaluatedMsgId) {
+function applyFinishFields(baseDoc, claimKind, sent, evaluatedMsgId, retryMsgId = null) {
   const next = { ...baseDoc, busyUntil: 0 };
-  if (evaluatedMsgId) {
+  if (retryMsgId) {
+    next.apiRetryFor = retryMsgId;
+    if (!next.pendingMsgId) {
+      next.pendingMsgId = retryMsgId;
+    }
+  } else if (evaluatedMsgId) {
     next.lastEvaluatedMsgId = evaluatedMsgId;
+    if (next.apiRetryFor === evaluatedMsgId) {
+      next.apiRetryFor = null;
+    }
     if (next.pendingMsgId === evaluatedMsgId) {
       next.pendingMsgId = null;
     }
@@ -107,6 +115,7 @@ function applyFinishFields(baseDoc, claimKind, sent, evaluatedMsgId) {
     next.lastAiAt = sent.at;
     next.lastAiId = sent.messageId;
     next.lastEvaluatedMsgId = sent.messageId;
+    next.apiRetryFor = null;
     if (next.pendingMsgId === sent.messageId) {
       next.pendingMsgId = null;
     }
@@ -118,9 +127,9 @@ function applyFinishFields(baseDoc, claimKind, sent, evaluatedMsgId) {
 }
 
 /** Libera a trava e atualiza o estado da IA após a avaliação (reconciliando conflito de pendingMsgId). */
-export async function finishAi(env, claim, sent, evaluatedMsgId = null) {
+export async function finishAi(env, claim, sent, evaluatedMsgId = null, retryMsgId = null) {
   try {
-    const next = applyFinishFields(claim.doc, claim.kind, sent, evaluatedMsgId);
+    const next = applyFinishFields(claim.doc, claim.kind, sent, evaluatedMsgId, retryMsgId);
     const written = await writeAiState(env, next, claim.updatedAt);
     if (written.ok) return;
 
@@ -130,7 +139,8 @@ export async function finishAi(env, claim, sent, evaluatedMsgId = null) {
       { ...claim.doc, pendingMsgId: fresh.doc?.pendingMsgId ?? claim.doc.pendingMsgId },
       claim.kind,
       sent,
-      evaluatedMsgId
+      evaluatedMsgId,
+      retryMsgId
     );
     if (fresh.doc?.pendingMsgId && fresh.doc.pendingMsgId !== evaluatedMsgId && fresh.doc.pendingMsgId !== sent?.messageId) {
       merged.pendingMsgId = fresh.doc.pendingMsgId;

@@ -53,8 +53,9 @@ export function parseJsonLoose(text) {
 
 async function callChatModel({ url, apiKey, model, system, user, full, minimal }) {
   const headers = { "Authorization": `Bearer ${apiKey}` };
+  const systemList = Array.isArray(system) ? system.filter(Boolean) : [system].filter(Boolean);
   const messages = [
-    { role: "system", content: system },
+    ...systemList.map(content => ({ role: "system", content })),
     { role: "user", content: user }
   ];
   let result = await postJson(url, headers, { model, messages, ...full });
