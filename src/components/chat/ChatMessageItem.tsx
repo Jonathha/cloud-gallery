@@ -84,6 +84,7 @@ function ChatMessageItemComponent({
     escalateTimerRef.current = null;
     startPosRef.current = null;
     window.removeEventListener('pointerup', clearHold);
+    window.removeEventListener('pointercancel', clearHold);
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -92,8 +93,8 @@ function ChatMessageItemComponent({
     const anchor = e.currentTarget as HTMLElement;
     startPosRef.current = { x: e.clientX, y: e.clientY };
     holdFiredRef.current = false;
-    // Solta o dedo/mouse em qualquer lugar (inclusive sobre o overlay do menu) cancela o timer
     window.addEventListener('pointerup', clearHold, { once: true });
+    window.addEventListener('pointercancel', clearHold, { once: true });
     holdTimerRef.current = setTimeout(() => {
       holdTimerRef.current = null;
       holdFiredRef.current = true;
@@ -105,14 +106,14 @@ function ChatMessageItemComponent({
           onAdminLongHold(msg);
         }, 2600);
       }
-    }, 400);
+    }, 650);
   };
 
   useEffect(() => () => clearHold(), []);
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (!startPosRef.current) return;
-    if (Math.abs(e.clientX - startPosRef.current.x) > 10 || Math.abs(e.clientY - startPosRef.current.y) > 10) {
+    if (Math.abs(e.clientX - startPosRef.current.x) > 6 || Math.abs(e.clientY - startPosRef.current.y) > 6) {
       clearHold();
     }
   };
@@ -218,6 +219,8 @@ function ChatMessageItemComponent({
         onDragEnd={onDragEnd}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
+        onPointerUp={clearHold}
+        onPointerCancel={clearHold}
         onContextMenu={onContextMenu}
         onClick={onClickMessage}
         animate={controls}
