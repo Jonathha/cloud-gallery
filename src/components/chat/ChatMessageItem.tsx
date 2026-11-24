@@ -196,8 +196,13 @@ function ChatMessageItemComponent({
     <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} relative group select-none`}>
       {/* Sender name only for other users on the first message of a cluster */}
       {!isMe && isFirstInGroup && (
-        <span className="text-[11px] text-zinc-400/90 mb-1 px-1.5 font-semibold tracking-tight">
+        <span className="text-[11px] text-zinc-400/90 mb-1 px-1.5 font-semibold tracking-tight flex items-center gap-1">
           {msg.userName}
+          {msg.userName === 'IA' && (
+            <span className="inline-flex items-center justify-center w-3 h-3 bg-blue-500 text-white rounded-full text-[8px]" title="Verificado">
+              ✓
+            </span>
+          )}
         </span>
       )}
 

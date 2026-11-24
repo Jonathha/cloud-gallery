@@ -8,6 +8,7 @@ import { validateChatAudioAttachment } from "./persistence/chatAudioValidator.js
 import { bumpUserVersion } from "../../userSync.js";
 import { CHAT_GLOBAL_SYNC_KEY } from "./chatPushApi.js";
 import { dispatchChatPushNotifications } from "./chatWebPush.js";
+import { maybeTriggerAiAssistant } from "./chatAiAssistant.js";
 
 /**
  * Handles chat message retrieval and message publishing in D1
@@ -37,7 +38,8 @@ export async function handleChatMessages(request, env, ctx) {
       bumpUserVersion(CHAT_GLOBAL_SYNC_KEY),
       dispatchChatPushNotifications(message, env).catch(err => {
         console.error("[handleChatMessages] Web Push dispatch error:", err);
-      })
+      }),
+      maybeTriggerAiAssistant(message, env, ctx).catch(() => {})
     ]);
     if (ctx && typeof ctx.waitUntil === "function") {
       ctx.waitUntil(notifyWork);
