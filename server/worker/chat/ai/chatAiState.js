@@ -1,5 +1,11 @@
 import { d1Query, ensureChatGlobalSchema } from "../../../chatGlobalD1.js";
-import { BUSY_LOCK_MS, MAX_AI_MESSAGES_PER_HOUR, MAX_CONTINUATIONS_IN_ROW, MIN_GAP_BETWEEN_AI_MS } from "./chatAiConfig.js";
+import {
+  BUSY_LOCK_MS,
+  MAX_AI_MESSAGES_PER_HOUR,
+  MAX_CONTINUATIONS_IN_ROW,
+  MAX_FOLLOWUPS_IN_ROW,
+  MIN_GAP_BETWEEN_AI_MS
+} from "./chatAiConfig.js";
 
 const DATASET = "IaEstado";
 
@@ -41,6 +47,18 @@ async function writeAiState(env, doc, prevUpdatedAt) {
   return { ok: (res.meta?.changes || 0) > 0, updatedAt: nextUpdatedAt };
 }
 
+/** Registra uma mensagem humana pendente quando a IA estava ocupada no momento do envio. */
+export async function markPendingMessage(env, messageId) {
+  if (!messageId) return;
+  try {
+    const { doc, updatedAt } = await readAiState(env);
+    if (doc.lastEvaluatedMsgId === messageId || doc.pendingMsgId === messageId) return;
+    await writeAiState(env, { ...doc, pendingMsgId: messageId }, updatedAt);
+  } catch {
+    // Silencioso
+  }
+}
+
 /** Reserva atomicamente a execução da IA usando concorrência otimista. */
 export async function claimAi(env, { kind, aiMessageId, latestMsgId } = {}) {
   const now = Date.now();
@@ -56,11 +74,20 @@ export async function claimAi(env, { kind, aiMessageId, latestMsgId } = {}) {
   }
 
   const next = { ...doc, sentAt: sentLastHour, busyUntil: now + BUSY_LOCK_MS };
-  if (kind === "continue") {
+  if (kind === "reply") {
+    if (doc.pendingMsgId && (!latestMsgId || doc.pendingMsgId === latestMsgId)) {
+      next.pendingMsgId = null;
+    }
+  } else if (kind === "continue") {
     if (!aiMessageId || doc.lastAiId !== aiMessageId) return null;
     if (doc.contEvaluatedFor === aiMessageId) return null;
     if ((doc.chain || 0) >= MAX_CONTINUATIONS_IN_ROW) return null;
     next.contEvaluatedFor = aiMessageId;
+  } else if (kind === "followup") {
+    if (!aiMessageId || doc.lastAiId !== aiMessageId) return null;
+    if (doc.followupEvaluatedFor === aiMessageId) return null;
+    if ((doc.followupChain || 0) >= MAX_FOLLOWUPS_IN_ROW) return null;
+    next.followupEvaluatedFor = aiMessageId;
   }
 
   const written = await writeAiState(env, next, updatedAt);
@@ -73,13 +100,18 @@ export async function finishAi(env, claim, sent, evaluatedMsgId = null) {
   const next = { ...claim.doc, busyUntil: 0 };
   if (evaluatedMsgId) {
     next.lastEvaluatedMsgId = evaluatedMsgId;
+    if (next.pendingMsgId === evaluatedMsgId) {
+      next.pendingMsgId = null;
+    }
   }
   if (sent) {
     next.lastAiAt = sent.at;
     next.lastAiId = sent.messageId;
     next.lastEvaluatedMsgId = sent.messageId;
+    next.pendingMsgId = null;
     next.sentAt = [...(claim.doc.sentAt || []), sent.at];
     next.chain = claim.kind === "continue" ? (claim.doc.chain || 0) + 1 : 0;
+    next.followupChain = claim.kind === "followup" ? (claim.doc.followupChain || 0) + 1 : 0;
   }
   try {
     await writeAiState(env, next, claim.updatedAt);

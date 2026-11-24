@@ -7,16 +7,24 @@ import {
   AI_USER_NAME,
   CONTINUE_MAX_AGE_MS,
   CONTINUE_MIN_AGE_MS,
+  FOLLOWUP_MAX_AGE_MS,
+  FOLLOWUP_MIN_AGE_MS,
   GEMINI_CONTEXT_MESSAGES,
   GROQ_CONTEXT_MESSAGES,
   MAX_CONTINUATIONS_IN_ROW,
+  MAX_FOLLOWUPS_IN_ROW,
   MAX_REPLY_CHARS,
   SETTLE_MS
 } from "./chatAiConfig.js";
-import { GEMINI_SYSTEM_PROMPT, GROQ_CONTINUE_SYSTEM_PROMPT, GROQ_GATE_SYSTEM_PROMPT } from "./chatAiPrompts.js";
+import {
+  GEMINI_SYSTEM_PROMPT,
+  GROQ_CONTINUE_SYSTEM_PROMPT,
+  GROQ_FOLLOWUP_SYSTEM_PROMPT,
+  GROQ_GATE_SYSTEM_PROMPT
+} from "./chatAiPrompts.js";
 import { callGeminiWriter, callGroqGate } from "./chatAiClients.js";
 import { buildTranscript, describeNow, loadRecentMessages, previewForReply, resolveRef } from "./chatAiContext.js";
-import { claimAi, finishAi, readAiState } from "./chatAiState.js";
+import { claimAi, finishAi, markPendingMessage, readAiState } from "./chatAiState.js";
 
 let lastPollCheckAt = 0;
 
@@ -44,7 +52,7 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
 
   const claim = await claimAi(env, {
     kind: triggerType,
-    aiMessageId: triggerType === "continue" ? targetMessageId : undefined,
+    aiMessageId: (triggerType === "continue" || triggerType === "followup") ? targetMessageId : undefined,
     latestMsgId: triggerType === "reply" ? targetMessageId : undefined
   });
   if (!claim) return false;
@@ -53,6 +61,7 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
   let finished = false;
   try {
     const isContinue = triggerType === "continue";
+    const isFollowup = triggerType === "followup";
     const recent = await loadRecentMessages(env, GEMINI_CONTEXT_MESSAGES);
     if (recent.length === 0) return true;
 
@@ -60,7 +69,7 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
     const lastMsg = recent[recent.length - 1];
     evaluatedLastId = lastMsg.id;
 
-    if (!isContinue) {
+    if (triggerType === "reply") {
       if (isAiAuthor(lastMsg.userId)) return true;
       if (claim.doc.lastEvaluatedMsgId === lastMsg.id) return true;
     } else {
@@ -71,23 +80,36 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
     const groqStartIdx = Math.max(0, recent.length - GROQ_CONTEXT_MESSAGES);
     const groqSlice = recent.slice(groqStartIdx);
     const groqTranscript = buildTranscript(groqSlice, groqStartIdx + 1, now);
-    const groqPrompt = isContinue
-      ? `Agora: ${describeNow(now)} (Brasília)\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nA "${AI_USER_NAME}" acabou de enviar a mensagem #${recent.length}. Vale ela enviar uma continuação útil agora?`
-      : `Agora: ${describeNow(now)} (Brasília)\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nAnalise a conversa até a mensagem #${recent.length}. A "${AI_USER_NAME}" deve responder ou interagir agora?`;
 
-    const gate = await callGroqGate(
-      env,
-      isContinue ? GROQ_CONTINUE_SYSTEM_PROMPT : GROQ_GATE_SYSTEM_PROMPT,
-      groqPrompt
-    );
+    let groqSystem = GROQ_GATE_SYSTEM_PROMPT;
+    let groqPrompt = `Agora: ${describeNow(now)} (Brasília)\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nAnalise a conversa até a mensagem #${recent.length}. A "${AI_USER_NAME}" deve responder ou interagir agora?`;
+
+    if (isContinue) {
+      groqSystem = GROQ_CONTINUE_SYSTEM_PROMPT;
+      groqPrompt = `Agora: ${describeNow(now)} (Brasília)\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nA "${AI_USER_NAME}" acabou de enviar a mensagem #${recent.length}. Vale ela enviar uma continuação útil agora?`;
+    } else if (isFollowup) {
+      groqSystem = GROQ_FOLLOWUP_SYSTEM_PROMPT;
+      groqPrompt = `Agora: ${describeNow(now)} (Brasília)\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nA "${AI_USER_NAME}" enviou a mensagem #${recent.length} há algum tempo. Analise se ela precisa falar novamente agora (corrigir algo, complementar ou retomar algum ponto importante).`;
+    }
+
+    const gate = await callGroqGate(env, groqSystem, groqPrompt);
     if (!gate) return true;
-    if (isContinue ? gate.continuar !== true : gate.responder !== true) return true;
+
+    const shouldActivate = isContinue
+      ? gate.continuar === true
+      : isFollowup
+        ? (gate.ativar === true || gate.responder === true || gate.continuar === true)
+        : gate.responder === true;
+    if (!shouldActivate) return true;
 
     // 2. Gemini (gemini-3.5-flash-lite) lê até 30 mensagens, gera pensamento interno privado e redige a fala
     const fullTranscript = buildTranscript(recent, 1, now);
     let geminiPrompt = `Agora: ${describeNow(now)} (Brasília)\n\nHistórico recente do Chat Global (até ${recent.length} mensagens):\n${fullTranscript}\n\n`;
-    if (isContinue) {
-      geminiPrompt += `MODO CONTINUAÇÃO: Sua última mensagem foi a #${recent.length} e ninguém respondeu depois. Se houver algo realmente novo e útil para complementar sem repetir o que já falou, escreva em "mensagem". Caso contrário defina "enviar": false.`;
+    if (isContinue || isFollowup) {
+      geminiPrompt += `MODO CONTINUAÇÃO: Sua última mensagem foi a #${recent.length} e ninguém respondeu depois. Analise o que você falou antes e a conversa recente: se houver algo novo, importante para corrigir/esclarecer ou útil para complementar sem repetir o que já disse, escreva em "mensagem". Caso contrário defina "enviar": false.`;
+      if (gate.alvo) {
+        geminiPrompt += ` O filtro sugeriu mirar na mensagem ${gate.alvo}.`;
+      }
     } else {
       geminiPrompt += `Avalie a conversa até #${recent.length}.`;
       if (gate.alvo) {
@@ -140,7 +162,7 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
   }
 }
 
-/** Acionado após mensagem de usuário humano (aguarda SETTLE_MS e tenta novamente se estava ocupado). */
+/** Acionado após mensagem de usuário humano (aguarda SETTLE_MS e garante fila via pendingMsgId se ocupado). */
 export async function triggerAiAfterMessage(message, env) {
   try {
     if (!message || isAiAuthor(message.userId) || message.mediaType !== "text") return;
@@ -148,6 +170,7 @@ export async function triggerAiAfterMessage(message, env) {
     await sleep(SETTLE_MS);
     const claimed = await runAiEvaluation(env, "reply", message.id);
     if (!claimed) {
+      await markPendingMessage(env, message.id);
       await sleep(3200);
       await runAiEvaluation(env, "reply", message.id);
     }
@@ -156,7 +179,7 @@ export async function triggerAiAfterMessage(message, env) {
   }
 }
 
-/** Avalia se a IA deve enviar uma continuação após um tempo da sua última fala. */
+/** Avalia mensagens pendentes, continuação curta ou reativação após alguns minutos. */
 export async function maybeContinueAi(env) {
   try {
     if (!env?.GEMINI_API_KEY || !env?.GROQ_API_KEY) return;
@@ -165,15 +188,34 @@ export async function maybeContinueAi(env) {
     lastPollCheckAt = now;
 
     const { doc } = await readAiState(env);
-    if (!doc.lastAiId) return;
-    if (doc.contEvaluatedFor === doc.lastAiId) return;
-    if ((doc.chain || 0) >= MAX_CONTINUATIONS_IN_ROW) return;
     if ((doc.busyUntil || 0) > now) return;
 
-    const age = now - (doc.lastAiAt || 0);
-    if (age < CONTINUE_MIN_AGE_MS || age > CONTINUE_MAX_AGE_MS) return;
+    if (doc.pendingMsgId && doc.lastEvaluatedMsgId !== doc.pendingMsgId) {
+      await runAiEvaluation(env, "reply", doc.pendingMsgId);
+      return;
+    }
 
-    await runAiEvaluation(env, "continue", doc.lastAiId);
+    if (!doc.lastAiId) return;
+    const age = now - (doc.lastAiAt || 0);
+
+    if (
+      doc.contEvaluatedFor !== doc.lastAiId &&
+      (doc.chain || 0) < MAX_CONTINUATIONS_IN_ROW &&
+      age >= CONTINUE_MIN_AGE_MS &&
+      age <= CONTINUE_MAX_AGE_MS
+    ) {
+      await runAiEvaluation(env, "continue", doc.lastAiId);
+      return;
+    }
+
+    if (
+      doc.followupEvaluatedFor !== doc.lastAiId &&
+      (doc.followupChain || 0) < MAX_FOLLOWUPS_IN_ROW &&
+      age >= FOLLOWUP_MIN_AGE_MS &&
+      age <= FOLLOWUP_MAX_AGE_MS
+    ) {
+      await runAiEvaluation(env, "followup", doc.lastAiId);
+    }
   } catch {
     // Falha silenciosa
   }
