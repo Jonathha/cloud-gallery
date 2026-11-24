@@ -8,7 +8,12 @@ import ChatHeader from './chat/ChatHeader';
 import ChatMessageList from './chat/ChatMessageList';
 import ChatMessageInput from './chat/ChatMessageInput';
 import ChatProfileForm from './chat/ChatProfileForm';
+import ChatNotificationPromptModal from './chat/ChatNotificationPromptModal';
 import { ChatMessage } from './chat/types';
+import {
+  isBrowserNotificationsSupported,
+  getBrowserNotificationStatus
+} from '../utils/chatBrowserNotifications';
 
 interface ChatTabProps { onBackToGallery?: () => void; }
 
@@ -20,6 +25,20 @@ export default function ChatTab({ onBackToGallery }: ChatTabProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [inputWrap, setInputWrap] = useState<HTMLDivElement | null>(null);
+  const [showNotifModal, setShowNotifModal] = useState(false);
+
+  React.useEffect(() => {
+    if (profile && isBrowserNotificationsSupported() && getBrowserNotificationStatus() === 'disabled') {
+      try {
+        const dismissed = localStorage.getItem('cg_chat_notif_prompt_dismissed_v1') === 'true';
+        if (!dismissed) {
+          // Show modal slightly after entering chat for smooth UX
+          const t = window.setTimeout(() => setShowNotifModal(true), 800);
+          return () => window.clearTimeout(t);
+        }
+      } catch {}
+    }
+  }, [profile]);
 
   // Altura real do campo de mensagem (cresce com várias linhas, banner de resposta e avisos);
   // a lista e os botões flutuantes usam essa medida para nunca ficarem por baixo dele.
@@ -201,5 +220,6 @@ export default function ChatTab({ onBackToGallery }: ChatTabProps) {
         </motion.div>}
       </AnimatePresence>
     </div>
+    <ChatNotificationPromptModal isOpen={showNotifModal} onClose={() => setShowNotifModal(false)} />
   </div>;
 }
