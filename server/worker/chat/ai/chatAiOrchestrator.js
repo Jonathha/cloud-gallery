@@ -40,31 +40,31 @@ async function sleep(ms) {
 
 /** Executa o fluxo completo: Claim -> Groq Gate (10 msgs) -> Gemini Writer (30 msgs) -> Persistência. */
 export async function runAiEvaluation(env, triggerType = "reply", targetMessageId = null) {
-  if (!env?.GEMINI_API_KEY || !env?.GROQ_API_KEY) return;
+  if (!env?.GEMINI_API_KEY || !env?.GROQ_API_KEY) return false;
 
   const claim = await claimAi(env, {
     kind: triggerType,
     aiMessageId: triggerType === "continue" ? targetMessageId : undefined,
     latestMsgId: triggerType === "reply" ? targetMessageId : undefined
   });
-  if (!claim) return;
+  if (!claim) return false;
 
   let evaluatedLastId = null;
   let finished = false;
   try {
     const isContinue = triggerType === "continue";
     const recent = await loadRecentMessages(env, GEMINI_CONTEXT_MESSAGES);
-    if (recent.length === 0) return;
+    if (recent.length === 0) return true;
 
     const now = Date.now();
     const lastMsg = recent[recent.length - 1];
     evaluatedLastId = lastMsg.id;
 
     if (!isContinue) {
-      if (isAiAuthor(lastMsg.userId)) return;
-      if (claim.doc.lastEvaluatedMsgId === lastMsg.id) return;
+      if (isAiAuthor(lastMsg.userId)) return true;
+      if (claim.doc.lastEvaluatedMsgId === lastMsg.id) return true;
     } else {
-      if (lastMsg.id !== targetMessageId || !isAiAuthor(lastMsg.userId)) return;
+      if (lastMsg.id !== targetMessageId || !isAiAuthor(lastMsg.userId)) return true;
     }
 
     // 1. Groq (openai/gpt-oss-120b) analisa até 10 mensagens para decidir se ativa o Gemini
@@ -73,15 +73,15 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
     const groqTranscript = buildTranscript(groqSlice, groqStartIdx + 1, now);
     const groqPrompt = isContinue
       ? `Agora: ${describeNow(now)} (Brasília)\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nA "${AI_USER_NAME}" acabou de enviar a mensagem #${recent.length}. Vale ela enviar uma continuação útil agora?`
-      : `Agora: ${describeNow(now)} (Brasília)\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nAnalise a conversa até a mensagem #${recent.length}. A "${AI_USER_NAME}" deve responder agora?`;
+      : `Agora: ${describeNow(now)} (Brasília)\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nAnalise a conversa até a mensagem #${recent.length}. A "${AI_USER_NAME}" deve responder ou interagir agora?`;
 
     const gate = await callGroqGate(
       env,
       isContinue ? GROQ_CONTINUE_SYSTEM_PROMPT : GROQ_GATE_SYSTEM_PROMPT,
       groqPrompt
     );
-    if (!gate) return;
-    if (isContinue ? gate.continuar !== true : gate.responder !== true) return;
+    if (!gate) return true;
+    if (isContinue ? gate.continuar !== true : gate.responder !== true) return true;
 
     // 2. Gemini (gemini-3.5-flash-lite) lê até 30 mensagens, gera pensamento interno privado e redige a fala
     const fullTranscript = buildTranscript(recent, 1, now);
@@ -96,10 +96,10 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
     }
 
     const writer = await callGeminiWriter(env, GEMINI_SYSTEM_PROMPT, geminiPrompt);
-    if (!writer || writer.enviar !== true) return;
+    if (!writer || writer.enviar !== true) return true;
 
     const finalText = sanitizeAiMessageText(writer.mensagem);
-    if (!finalText) return;
+    if (!finalText) return true;
 
     // 3. Resolve citação "respondendo a..." somente se necessária e válida
     const replyCandidate = resolveRef(writer.responder_a, recent);
@@ -130,8 +130,9 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
 
     finished = true;
     await finishAi(env, claim, { messageId: aiMessage.id, at: aiMessage.createdAt }, aiMessage.id);
+    return true;
   } catch {
-    // Falha silenciosa: nunca exibe erros no chat
+    return true;
   } finally {
     if (!finished) {
       await finishAi(env, claim, null, evaluatedLastId);
@@ -139,13 +140,17 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
   }
 }
 
-/** Acionado após mensagem de usuário humano (aguarda SETTLE_MS para agrupar mensagens seguidas). */
+/** Acionado após mensagem de usuário humano (aguarda SETTLE_MS e tenta novamente se estava ocupado). */
 export async function triggerAiAfterMessage(message, env) {
   try {
     if (!message || isAiAuthor(message.userId) || message.mediaType !== "text") return;
     if (!env?.GEMINI_API_KEY || !env?.GROQ_API_KEY) return;
     await sleep(SETTLE_MS);
-    await runAiEvaluation(env, "reply", message.id);
+    const claimed = await runAiEvaluation(env, "reply", message.id);
+    if (!claimed) {
+      await sleep(3200);
+      await runAiEvaluation(env, "reply", message.id);
+    }
   } catch {
     // Falha silenciosa
   }
