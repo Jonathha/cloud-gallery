@@ -1,5 +1,11 @@
 import {
-  GEMINI_ENDPOINT, GEMINI_NATIVE_ENDPOINT, GEMINI_MODEL, GROQ_ENDPOINT, GROQ_MODEL, REQUEST_TIMEOUT_MS
+  GEMINI_ENDPOINT,
+  GEMINI_NATIVE_ENDPOINT,
+  GEMINI_MODEL,
+  GEMINI_SEARCH_FALLBACK_MODEL,
+  GROQ_ENDPOINT,
+  GROQ_MODEL,
+  REQUEST_TIMEOUT_MS
 } from "./chatAiConfig.js";
 
 async function sleep(ms) {
@@ -58,6 +64,7 @@ async function callChatModel({ url, apiKey, model, system, user, full, minimal }
     ...systemList.map(content => ({ role: "system", content })),
     { role: "user", content: user }
   ];
+
   let result = await postJson(url, headers, { model, messages, ...full });
   if (result.status === 400) {
     result = await postJson(url, headers, { model, messages, ...minimal });
@@ -69,11 +76,14 @@ async function callChatModel({ url, apiKey, model, system, user, full, minimal }
 
 /** Fallback direto para a API nativa do Gemini caso o endpoint OpenAI falhe. */
 async function callGeminiNative(apiKey, system, user) {
+  const systemParts = (Array.isArray(system) ? system : [system])
+    .filter(Boolean)
+    .map(text => ({ text }));
   const result = await postJson(
     GEMINI_NATIVE_ENDPOINT,
     { "x-goog-api-key": apiKey },
     {
-      systemInstruction: { parts: [{ text: system }] },
+      systemInstruction: { parts: systemParts },
       contents: [{ role: "user", parts: [{ text: user }] }],
       generationConfig: {
         responseMimeType: "application/json",
@@ -82,7 +92,8 @@ async function callGeminiNative(apiKey, system, user) {
       }
     }
   );
-  const text = result.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const parts = result.data?.candidates?.[0]?.content?.parts || [];
+  const text = parts.map(p => (typeof p.text === "string" ? p.text : "")).join("").trim();
   if (!text) return null;
   return parseJsonLoose(text);
 }
@@ -125,4 +136,52 @@ export async function callGeminiWriter(env, system, user) {
   });
   if (openAiParsed) return openAiParsed;
   return callGeminiNative(env.GEMINI_API_KEY, system, user);
+}
+
+/** Pesquisa na web via API nativa do Google Gemini com Google Search Grounding (GEMINI_API_KEY). */
+export async function callGeminiWebSearch(env, query, nowDesc = "") {
+  const cleanQuery = String(query || "").trim();
+  if (!env?.GEMINI_API_KEY || !cleanQuery) return null;
+
+  const models = [GEMINI_MODEL, GEMINI_SEARCH_FALLBACK_MODEL].filter((v, i, a) => v && a.indexOf(v) === i);
+  const prompt = [
+    nowDesc ? `Data/hora atual (Brasília): ${nowDesc}.` : "",
+    `Pesquise na web e responda de forma objetiva, factual e curta (máximo 5 linhas) apenas com fatos confirmados sobre: ${cleanQuery}`,
+    "Se houver datas, valores, nomes oficiais ou se as fontes indicarem boato/falso, deixe claro."
+  ].filter(Boolean).join("\n");
+
+  for (const model of models) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const result = await postJson(
+      endpoint,
+      { "x-goog-api-key": env.GEMINI_API_KEY },
+      {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        tools: [{ googleSearch: {} }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 700
+        }
+      }
+    );
+
+    if (result.status === 400 || result.status === 404) {
+      continue;
+    }
+
+    const candidate = result.data?.candidates?.[0];
+    const parts = candidate?.content?.parts || [];
+    const text = parts.map(p => (typeof p.text === "string" ? p.text : "")).join("").trim();
+    if (!text) return null;
+
+    const chunks = candidate?.groundingMetadata?.groundingChunks || [];
+    const sources = chunks
+      .map(c => c?.web)
+      .filter(w => w && (w.title || w.uri))
+      .slice(0, 4)
+      .map(w => w.title || w.uri);
+
+    return { text, sources, grounded: chunks.length > 0 };
+  }
+  return null;
 }

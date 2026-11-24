@@ -8,6 +8,7 @@ export const AI_USER_NAME = "IA";
 export const GEMINI_MODEL = "gemini-3.5-flash-lite";
 export const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 export const GEMINI_NATIVE_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent";
+export const GEMINI_SEARCH_FALLBACK_MODEL = "gemini-4-hydrogen";
 export const GROQ_MODEL = "openai/gpt-oss-120b";
 export const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 

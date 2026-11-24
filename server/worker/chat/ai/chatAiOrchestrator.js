@@ -17,13 +17,15 @@ import {
   SETTLE_MS
 } from "./chatAiConfig.js";
 import {
+  GEMINI_SEARCH_SYSTEM_PROMPT,
   GEMINI_SYSTEM_PROMPT,
   GROQ_CONTEXT_AWARENESS_SYSTEM_PROMPT,
   GROQ_CONTINUE_SYSTEM_PROMPT,
   GROQ_FOLLOWUP_SYSTEM_PROMPT,
-  GROQ_GATE_SYSTEM_PROMPT
+  GROQ_GATE_SYSTEM_PROMPT,
+  GROQ_SEARCH_SYSTEM_PROMPT
 } from "./chatAiPrompts.js";
-import { callGeminiWriter, callGroqGate } from "./chatAiClients.js";
+import { callGeminiWebSearch, callGeminiWriter, callGroqGate } from "./chatAiClients.js";
 import {
   buildTranscript,
   describeConversationContext,
@@ -95,14 +97,15 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
     const groqTranscript = buildTranscript(groqSlice, groqStartIdx + 1, now, recent);
     const contextLine = describeConversationContext(recent, now, targetMessageId || lastMsg.id);
 
-    let groqSystems = [GROQ_GATE_SYSTEM_PROMPT, GROQ_CONTEXT_AWARENESS_SYSTEM_PROMPT];
-    let groqPrompt = `Agora: ${describeNow(now)} (Brasília)\n${presenceLine}\n${contextLine}\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nAnalise a conversa até a mensagem #${recent.length}. A "${AI_USER_NAME}" deve responder ou interagir agora?`;
+    const nowDesc = describeNow(now);
+    let groqSystems = [GROQ_GATE_SYSTEM_PROMPT, GROQ_CONTEXT_AWARENESS_SYSTEM_PROMPT, GROQ_SEARCH_SYSTEM_PROMPT];
+    let groqPrompt = `Agora: ${nowDesc} (Brasília)\n${presenceLine}\n${contextLine}\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nAnalise a conversa até a mensagem #${recent.length}. A "${AI_USER_NAME}" deve responder ou interagir agora?`;
     if (isContinue) {
-      groqSystems = [GROQ_CONTINUE_SYSTEM_PROMPT, GROQ_CONTEXT_AWARENESS_SYSTEM_PROMPT];
-      groqPrompt = `Agora: ${describeNow(now)} (Brasília)\n${presenceLine}\n${contextLine}\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nA "${AI_USER_NAME}" acabou de enviar a mensagem #${recent.length}. Vale ela enviar uma continuação útil agora?`;
+      groqSystems = [GROQ_CONTINUE_SYSTEM_PROMPT, GROQ_CONTEXT_AWARENESS_SYSTEM_PROMPT, GROQ_SEARCH_SYSTEM_PROMPT];
+      groqPrompt = `Agora: ${nowDesc} (Brasília)\n${presenceLine}\n${contextLine}\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nA "${AI_USER_NAME}" acabou de enviar a mensagem #${recent.length}. Vale ela enviar uma continuação útil agora?`;
     } else if (isFollowup) {
-      groqSystems = [GROQ_FOLLOWUP_SYSTEM_PROMPT, GROQ_CONTEXT_AWARENESS_SYSTEM_PROMPT];
-      groqPrompt = `Agora: ${describeNow(now)} (Brasília)\n${presenceLine}\n${contextLine}\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nA "${AI_USER_NAME}" enviou a mensagem #${recent.length} há algum tempo. Analise se ela precisa falar novamente agora (corrigir algo, complementar ou retomar algum ponto importante).`;
+      groqSystems = [GROQ_FOLLOWUP_SYSTEM_PROMPT, GROQ_CONTEXT_AWARENESS_SYSTEM_PROMPT, GROQ_SEARCH_SYSTEM_PROMPT];
+      groqPrompt = `Agora: ${nowDesc} (Brasília)\n${presenceLine}\n${contextLine}\n\nÚltimas mensagens do chat:\n${groqTranscript}\n\nA "${AI_USER_NAME}" enviou a mensagem #${recent.length} há algum tempo. Analise se ela precisa falar novamente agora (corrigir algo, complementar ou retomar algum ponto importante).`;
     }
 
     const gate = await callGroqGate(env, groqSystems, groqPrompt);
@@ -120,9 +123,28 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
         : gate.responder === true;
     if (!shouldActivate) return true;
 
-    // 2. Gemini (gemini-3.5-flash-lite) lê até 30 mensagens + presença online, gera pensamento interno privado e redige a fala
+    // 2. Se o filtro já apontou necessidade de busca na web, consulta o Google Search Grounding antes de escrever
+    const formatSearchBlock = (query, searchResult) => {
+      if (!searchResult?.text) {
+        return `\n\n[PESQUISA NA WEB - CONSULTA: "${query}"]\nA busca na web não retornou dados confiáveis agora. Responda com honestidade sem inventar.`;
+      }
+      const srcLine = searchResult.sources?.length ? `\nFontes consultadas: ${searchResult.sources.join(" | ")}` : "";
+      return `\n\n[PESQUISA NA WEB - CONSULTA: "${query}"]\n${searchResult.text}${srcLine}`;
+    };
+
+    let searchContextBlock = "";
+    let alreadySearched = false;
+    const preSearchQuery = typeof gate.pesquisar === "string" ? gate.pesquisar.trim() : "";
+    if (preSearchQuery) {
+      alreadySearched = true;
+      const preSearch = await callGeminiWebSearch(env, preSearchQuery, nowDesc);
+      searchContextBlock = formatSearchBlock(preSearchQuery, preSearch);
+    }
+
+    // 3. Gemini (gemini-3.5-flash-lite) lê até 30 mensagens + presença + eventual pesquisa na web e redige a fala
+    const geminiSystems = [GEMINI_SYSTEM_PROMPT, GEMINI_SEARCH_SYSTEM_PROMPT];
     const fullTranscript = buildTranscript(recent, 1, now, recent);
-    let geminiPrompt = `Agora: ${describeNow(now)} (Brasília)\n${presenceLine}\n${contextLine}\n\nHistórico recente do Chat Global (até ${recent.length} mensagens):\n${fullTranscript}\n\n`;
+    let geminiPrompt = `Agora: ${nowDesc} (Brasília)\n${presenceLine}\n${contextLine}\n\nHistórico recente do Chat Global (até ${recent.length} mensagens):\n${fullTranscript}${searchContextBlock}\n\n`;
     if (isContinue || isFollowup) {
       geminiPrompt += `MODO CONTINUAÇÃO: Sua última mensagem foi a #${recent.length} e ninguém respondeu depois. Analise o que você falou antes e a conversa recente: se houver algo novo, importante para corrigir/esclarecer ou útil para complementar sem repetir o que já disse, escreva em "mensagem". Caso contrário defina "enviar": false.`;
       if (gate.alvo) {
@@ -135,13 +157,25 @@ export async function runAiEvaluation(env, triggerType = "reply", targetMessageI
       }
     }
 
-    const writer = await callGeminiWriter(env, GEMINI_SYSTEM_PROMPT, geminiPrompt);
+    let writer = await callGeminiWriter(env, geminiSystems, geminiPrompt);
     if (!writer) {
       if (triggerType === "reply" && claim.doc.apiRetryFor !== evaluatedLastId) {
         retryMsgId = evaluatedLastId;
       }
       return true;
     }
+
+    const modelSearchQuery = typeof writer.buscar_web === "string" ? writer.buscar_web.trim() : "";
+    if (!alreadySearched && modelSearchQuery) {
+      alreadySearched = true;
+      const webSearch = await callGeminiWebSearch(env, modelSearchQuery, nowDesc);
+      const groundedPrompt = `${geminiPrompt}${formatSearchBlock(modelSearchQuery, webSearch)}\nAgora responda ao usuário com base nessa pesquisa na web.`;
+      const secondWriter = await callGeminiWriter(env, geminiSystems, groundedPrompt);
+      if (secondWriter) {
+        writer = secondWriter;
+      }
+    }
+
     if (writer.enviar !== true) return true;
 
     const finalText = sanitizeAiMessageText(writer.mensagem);
