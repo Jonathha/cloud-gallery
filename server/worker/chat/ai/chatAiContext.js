@@ -1,4 +1,5 @@
 import { getChatMessagesPage } from "../../../chatGlobalD1.js";
+import { getChatPresence } from "../../../userSync.js";
 import { decryptChatText } from "../chatCrypto.js";
 import { AI_USER_ID, AI_USER_NAME, CHAT_TIMEZONE, MAX_CONTEXT_CHARS_PER_MESSAGE } from "./chatAiConfig.js";
 
@@ -31,6 +32,17 @@ export async function loadRecentMessages(env, limit) {
     });
   }
   return out;
+}
+
+/** Descreve quantas pessoas e quem está online dentro do Chat Global agora. */
+export async function describePresence() {
+  const { users } = await getChatPresence();
+  const humans = users.filter(u => u && u.userId !== AI_USER_ID && u.userId !== "ai-assistant-system");
+  if (humans.length === 0) {
+    return "Online no Chat Global agora (0 usuários humanos detectados no momento, além de você, IA).";
+  }
+  const names = humans.map(u => u.userName).join(", ");
+  return `Online no Chat Global agora (${humans.length} ${humans.length === 1 ? "pessoa" : "pessoas"}, além de você, IA): ${names}`;
 }
 
 const timeFmt = new Intl.DateTimeFormat("pt-BR", { timeZone: CHAT_TIMEZONE, hour: "2-digit", minute: "2-digit", hour12: false });

@@ -1,13 +1,15 @@
 import { jsonResponse } from "../../../workerHelpers.js";
 import { getChatMessagesPage } from "../../../chatGlobalD1.js";
 import { createChatMediaSignature, getMediaKeyFromUrl } from "../../../workerChatMediaAuth.js";
+import { pingChatPresence } from "../../../userSync.js";
+import { resolveChatUserProfile } from "./chatProfileResolver.js";
 import { maybeContinueAi } from "../ai/chatAiOrchestrator.js";
 
 /**
  * Handles fetching chat messages list and signing audio media URLs
  * Formats signed URLs with expiration and signature query parameters
  */
-export async function fetchChatMessagesList(request, env, ctx) {
+export async function fetchChatMessagesList(request, env, ctx, user) {
   const url = new URL(request.url);
   const limit = Number(url.searchParams.get("limit") || 100);
   const beforeParam = url.searchParams.get("before");
@@ -40,7 +42,16 @@ export async function fetchChatMessagesList(request, env, ctx) {
   }
 
   if (!cursor && ctx && typeof ctx.waitUntil === "function") {
-    ctx.waitUntil(maybeContinueAi(env).catch(() => {}));
+    const bgWork = (async () => {
+      if (user?.uid) {
+        const profile = await resolveChatUserProfile(user, env).catch(() => null);
+        if (profile?.username) {
+          await pingChatPresence(user.uid, profile.username, false);
+        }
+      }
+      await maybeContinueAi(env);
+    })().catch(() => {});
+    ctx.waitUntil(bgWork);
   }
 
   return jsonResponse({ success: true, messages, hasMore });

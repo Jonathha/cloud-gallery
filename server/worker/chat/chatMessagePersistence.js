@@ -5,7 +5,7 @@ import { validateMessagePayload } from "./chatMessageValidation.js";
 import { fetchChatMessagesList } from "./persistence/chatFetchMessages.js";
 import { resolveChatUserProfile } from "./persistence/chatProfileResolver.js";
 import { validateChatAudioAttachment } from "./persistence/chatAudioValidator.js";
-import { bumpUserVersion } from "../../userSync.js";
+import { bumpUserVersion, pingChatPresence } from "../../userSync.js";
 import { CHAT_GLOBAL_SYNC_KEY } from "./chatPushApi.js";
 import { dispatchChatPushNotifications } from "./chatWebPush.js";
 import { AI_USER_ID } from "./ai/chatAiConfig.js";
@@ -20,7 +20,7 @@ export async function handleChatMessages(request, env, ctx) {
     await ensureChatGlobalSchema(env);
 
     if (request.method === "GET") {
-      return await fetchChatMessagesList(request, env, ctx);
+      return await fetchChatMessagesList(request, env, ctx, user);
     }
 
     const body = await request.json().catch(() => ({}));
@@ -36,9 +36,12 @@ export async function handleChatMessages(request, env, ctx) {
 
     await saveChatMessage(message, env);
 
-    const aiTask = (message.userId !== AI_USER_ID && message.mediaType === "text")
-      ? triggerAiAfterMessage(message, env).catch(() => {})
-      : Promise.resolve();
+    const aiTask = (async () => {
+      await pingChatPresence(user.uid, profile.username, true);
+      if (message.userId !== AI_USER_ID && message.mediaType === "text") {
+        await triggerAiAfterMessage(message, env);
+      }
+    })().catch(() => {});
 
     const notifyWork = Promise.all([
       bumpUserVersion(CHAT_GLOBAL_SYNC_KEY),
